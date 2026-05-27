@@ -21,7 +21,7 @@ func (s *ServiceLight) Executer(entityID, action string, params map[string]inter
 
 func (s *ServiceLight) ScoreDomaine(estAction bool) int {
 	if estAction {
-		return 40
+		return 20
 	}
 	return 0
 }

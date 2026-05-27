@@ -114,14 +114,25 @@ func (c *Client) setToken(token string) {
 
 // EnvoyerSMS envoie un SMS au numéro donné
 func (c *Client) EnvoyerSMS(numero, message string) error {
-	_, err := c.call("SendSMS", map[string]interface{}{
-		"SMSId":       -1,
-		"SMSContent":  message,
-		"PhoneNumber": numero,
-		"SMSTime":     time.Now().Format("2006-01-02 15:04:05"),
-	})
-	if err != nil {
-		return err
+	const maxRetries = 3
+
+	var sendErr error
+	for attempt := range maxRetries {
+		_, sendErr = c.call("SendSMS", map[string]interface{}{
+			"SMSId":       -1,
+			"SMSContent":  message,
+			"PhoneNumber": numero,
+			"SMSTime":     time.Now().Format("2006-01-02 15:04:05"),
+		})
+		if sendErr == nil {
+			break
+		}
+		if attempt < maxRetries-1 {
+			time.Sleep(time.Duration(1<<attempt) * time.Second)
+		}
+	}
+	if sendErr != nil {
+		return fmt.Errorf("SendSMS après %d tentatives : %w", maxRetries, sendErr)
 	}
 
 	// Attendre confirmation d'envoi (max 10 secondes)
