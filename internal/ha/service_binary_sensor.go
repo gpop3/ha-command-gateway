@@ -13,9 +13,6 @@ func (s *ServiceBinarySensor) Executer(entityID, action string, params map[strin
 }
 
 func (s *ServiceBinarySensor) ScoreDomaine(estAction bool) int {
-	if !estAction {
-		return 25
-	}
 	return 0
 }
 

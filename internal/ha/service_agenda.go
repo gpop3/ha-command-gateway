@@ -26,7 +26,7 @@ func (s *ServiceAgenda) Executer(entityID, action string, params map[string]inte
 	return s.appeler(entityID, action, params)
 }
 
-func (s *ServiceAgenda) ScoreDomaine(_ bool) int { return 80 }
+func (s *ServiceAgenda) ScoreDomaine(_ bool) int { return 20 }
 
 func (s *ServiceAgenda) EstActionParDefaut() bool { return true }
 

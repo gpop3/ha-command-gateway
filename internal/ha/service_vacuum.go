@@ -27,7 +27,7 @@ func (s *ServiceVacuum) Executer(entityID, action string, params map[string]inte
 
 func (s *ServiceVacuum) ScoreDomaine(estAction bool) int {
 	if estAction {
-		return 60
+		return 30
 	}
 	return 0
 }
