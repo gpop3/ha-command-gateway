@@ -16,18 +16,19 @@ import (
 
 // Client gère la connexion au modem TCL LinkKey IK41 via HTTP
 type Client struct {
-	http       *http.Client
-	jar        *cookiejar.Jar
-	baseURL    string
-	modemURL   *url.URL
-	verifKey   string
-	freeKey    string
-	hmacKey    string
-	xorKey     string
-	loginToken string
-	password   string
-	whitelist  []string
-	sessionKey string // clé de chiffrement post-login (formatStr(pbkdf2password))
+	http        *http.Client
+	jar         *cookiejar.Jar
+	baseURL     string
+	modemURL    *url.URL
+	verifKey    string
+	freeKey     string
+	hmacKey     string
+	xorKey      string
+	loginToken  string
+	password    string
+	whitelist   []string
+	sessionKey  string // clé de chiffrement post-login (formatStr(pbkdf2password))
+	derniersLus map[string]bool
 }
 
 // SMS représente un message reçu
@@ -42,16 +43,17 @@ func New(baseURL, password, verifKey, xorKey, freeKey, hmacKey, whitelist string
 	modemURL, _ := url.Parse(baseURL)
 
 	c := &Client{
-		http:      &http.Client{Timeout: 10 * time.Second, Jar: jar},
-		jar:       jar,
-		baseURL:   baseURL + "/jrd/webapi",
-		modemURL:  modemURL,
-		xorKey:    xorKey,
-		verifKey:  verifKey,
-		freeKey:   freeKey,
-		hmacKey:   hmacKey,
-		whitelist: strings.Split(whitelist, ","),
-		password:  password,
+		http:        &http.Client{Timeout: 10 * time.Second, Jar: jar},
+		jar:         jar,
+		baseURL:     baseURL + "/jrd/webapi",
+		modemURL:    modemURL,
+		xorKey:      xorKey,
+		verifKey:    verifKey,
+		freeKey:     freeKey,
+		hmacKey:     hmacKey,
+		whitelist:   strings.Split(whitelist, ","),
+		derniersLus: make(map[string]bool),
+		password:    password,
 	}
 
 	if err := c.login(); err != nil {
@@ -155,9 +157,9 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 }
 
 func (c *Client) EcouterSMS(canal chan<- SMS) {
-	derniersLus := map[string]bool{}
-
 	for {
+		idsActuels := map[string]bool{}
+
 		time.Sleep(10 * time.Second)
 
 		contacts, err := c.getSMSContacts()
@@ -179,9 +181,13 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 			for _, msg := range messages {
 				smsID, _ := msg["SMSId"].(float64)
 				smsType, _ := contact["SMSType"].(float64)
-
 				key := fmt.Sprintf("%.0f", smsID)
-				derniersLus[key] = true
+				idsActuels[key] = true
+
+				if c.derniersLus[key] {
+					continue
+				}
+				c.derniersLus[key] = true
 
 				var numero string
 				switch v := contact["PhoneNumber"].(type) {
@@ -220,6 +226,12 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 					fmt.Println(err)
 				}
 
+			}
+		}
+
+		for key := range c.derniersLus {
+			if !idsActuels[key] {
+				delete(c.derniersLus, key)
 			}
 		}
 	}

@@ -3,10 +3,11 @@ package ha
 import (
 	"encoding/json"
 	"fmt"
-	"ha-command-gateway/internal/i18n"
 	"log"
 	"strings"
 	"time"
+
+	"ha-command-gateway/internal/i18n"
 )
 
 type ServiceAgenda struct {
@@ -15,18 +16,19 @@ type ServiceAgenda struct {
 }
 
 func NewServiceAgenda(c *Client) *ServiceAgenda {
-	return &ServiceAgenda{serviceBase: newServiceBase("agenda", c, map[string]string{})}
+	return &ServiceAgenda{serviceBase: newServiceBase("calendar", c, map[string]string{})}
 }
 
+// SetCatalogue met à jour le catalogue — appelé depuis l'analyseur après RafraichirCatalogue
 func (s *ServiceAgenda) SetCatalogue(catalogue []Appareil) {
 	s.catalogue = catalogue
 }
 
 func (s *ServiceAgenda) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
+	return "", nil
 }
 
-func (s *ServiceAgenda) ScoreDomaine(_ bool) int { return 20 }
+func (s *ServiceAgenda) ScoreDomaine(_ bool) int { return 80 }
 
 func (s *ServiceAgenda) EstActionParDefaut() bool { return true }
 
@@ -114,14 +116,16 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (str
 	}
 
 	for _, e := range tousEvenements {
-		t, err := time.Parse(time.RFC3339, e.Start)
-		if err == nil {
+		val := e.Start.Value()
+		t, err := time.Parse(time.RFC3339, val)
+		if err != nil {
+			// Essai format date seule (journée entière)
+			t, err = time.Parse("2006-01-02", val)
+		}
+		if err == nil && (t.Hour() != 0 || t.Minute() != 0) {
 			sb.WriteString(i18n.T("agenda.ligne", t.Hour(), t.Minute(), e.Summary))
 		} else {
-			_, err := fmt.Fprintf(&sb, "• %s\n", e.Summary)
-			if err != nil {
-				return "", err
-			}
+			fmt.Fprintf(&sb, "• %s\n", e.Summary)
 		}
 	}
 

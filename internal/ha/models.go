@@ -80,9 +80,23 @@ type PrevisionHoraire struct {
 }
 
 // EvenementCalendrier représente un événement du calendrier HA
+type CalendarDateTime struct {
+	DateTime string `json:"dateTime"`
+	Date     string `json:"date"`
+}
+
+// Value retourne la valeur disponible (dateTime ou date)
+func (c CalendarDateTime) Value() string {
+	if c.DateTime != "" {
+		return c.DateTime
+	}
+	return c.Date
+}
+
+// EvenementCalendrier représente un événement du calendrier HA
 type EvenementCalendrier struct {
-	Start       string `json:"start"`
-	End         string `json:"end"`
-	Summary     string `json:"summary"`
-	Description string `json:"description"`
+	Start       CalendarDateTime `json:"start"`
+	End         CalendarDateTime `json:"end"`
+	Summary     string           `json:"summary"`
+	Description string           `json:"description"`
 }
