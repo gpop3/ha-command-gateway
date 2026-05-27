@@ -16,7 +16,7 @@ type ServiceAgenda struct {
 }
 
 func NewServiceAgenda(c *Client) *ServiceAgenda {
-	return &ServiceAgenda{serviceBase: newServiceBase("calendar", c, map[string]string{})}
+	return &ServiceAgenda{serviceBase: newServiceBase("agenda", c, map[string]string{})}
 }
 
 // SetCatalogue met à jour le catalogue — appelé depuis l'analyseur après RafraichirCatalogue
