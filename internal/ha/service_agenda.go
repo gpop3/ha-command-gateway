@@ -23,7 +23,6 @@ func NewServiceAgenda(c *Client) *ServiceAgenda {
 func (s *ServiceAgenda) SetCatalogue(catalogue []Appareil) {
 	s.catalogue = catalogue
 }
-
 func (s *ServiceAgenda) Executer(entityID, action string, params map[string]interface{}) (string, error) {
 	return "", nil
 }
@@ -34,11 +33,14 @@ func (s *ServiceAgenda) EstActionParDefaut() bool { return true }
 
 func (s *ServiceAgenda) ExtraireParams(texte string) map[string]interface{} {
 	params := map[string]interface{}{}
-	if strings.Contains(texte, "demain") {
+	switch {
+	case strings.Contains(texte, "demain"):
 		params["horizon"] = "demain"
-	} else if strings.Contains(texte, "semaine") {
+	case strings.Contains(texte, "semaine"):
 		params["horizon"] = "semaine"
-	} else {
+	case strings.Contains(texte, "mois"):
+		params["horizon"] = "mois"
+	default:
 		params["horizon"] = "aujourd'hui"
 	}
 	return params
@@ -55,6 +57,9 @@ func (s *ServiceAgenda) ExecuterCommande(app Appareil, verbe string, params map[
 	case "semaine":
 		debut = now
 		fin = now.Add(7 * 24 * time.Hour)
+	case "mois":
+		debut = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		fin = time.Date(now.Year(), now.Month()+1, now.Day(), 0, 0, 0, 0, time.Local)
 	default:
 		debut = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 		fin = debut.Add(24 * time.Hour)
@@ -65,7 +70,7 @@ func (s *ServiceAgenda) ExecuterCommande(app Appareil, verbe string, params map[
 func (s *ServiceAgenda) MotsReconnus() []string {
 	return []string{
 		"agenda", "calendrier", "rendez-vous", "prévu", "programme", "événements",
-		"demain", "semaine", "aujourd'hui",
+		"demain", "semaine", "aujourd'hui", "mois",
 	}
 }
 
@@ -100,6 +105,8 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (str
 			return i18n.T("agenda.vide.demain"), nil
 		case "semaine":
 			return i18n.T("agenda.vide.semaine"), nil
+		case "mois":
+			return i18n.T("agenda.vide.mois"), nil
 		default:
 			return i18n.T("agenda.vide.jour"), nil
 		}
@@ -111,6 +118,8 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (str
 		sb.WriteString(i18n.T("agenda.demain"))
 	case "semaine":
 		sb.WriteString(i18n.T("agenda.semaine"))
+	case "mois":
+		sb.WriteString(i18n.T("agenda.mois"))
 	default:
 		sb.WriteString(i18n.T("agenda.aujourd.hui"))
 	}
@@ -119,13 +128,29 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (str
 		val := e.Start.Value()
 		t, err := time.Parse(time.RFC3339, val)
 		if err != nil {
-			// Essai format date seule (journée entière)
 			t, err = time.Parse("2006-01-02", val)
 		}
-		if err == nil && (t.Hour() != 0 || t.Minute() != 0) {
-			sb.WriteString(i18n.T("agenda.ligne", t.Hour(), t.Minute(), e.Summary))
+		if err != nil {
+			_, err := fmt.Fprintf(&sb, "• %s\n", e.Summary)
+			if err != nil {
+				return "", err
+			}
+			continue
+		}
+
+		jour := joursFR[t.Weekday()]
+		date := fmt.Sprintf("%s %d %s", jour, t.Day(), moisFR[t.Month()-1])
+
+		if t.Hour() != 0 || t.Minute() != 0 {
+			_, err := fmt.Fprintf(&sb, "• %s %dh%02d — %s\n", date, t.Hour(), t.Minute(), e.Summary)
+			if err != nil {
+				return "", err
+			}
 		} else {
-			fmt.Fprintf(&sb, "• %s\n", e.Summary)
+			_, err := fmt.Fprintf(&sb, "• %s — %s\n", date, e.Summary)
+			if err != nil {
+				return "", err
+			}
 		}
 	}
 

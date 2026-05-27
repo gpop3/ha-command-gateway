@@ -68,10 +68,12 @@ func init() {
 		"agenda.aujourd.hui":  "📅 Aujourd'hui :\n",
 		"agenda.demain":       "📅 Demain :\n",
 		"agenda.semaine":      "📅 Cette semaine :\n",
+		"agenda.mois":         "📅 Ce mois :\n",
 		"agenda.ligne":        "• %dh%02d — %s\n",
 		"agenda.vide.jour":    "📅 Rien de prévu aujourd'hui.",
 		"agenda.vide.demain":  "📅 Rien de prévu demain.",
 		"agenda.vide.semaine": "📅 Rien de prévu cette semaine.",
+		"agenda.vide.mois":    "📅 Rien de prévu ce mois.",
 
 		// ---- Résumé maison ----
 		"maison.resume":         "🏠 Résumé de la maison :\n",
