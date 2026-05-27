@@ -26,7 +26,7 @@ func NewClient(url, token string, piecesEnv string, cfg *config.Config) *Client 
 	c := &Client{
 		url:   url,
 		token: token,
-		http:  &http.Client{Timeout: 5 * time.Second},
+		http:  &http.Client{Timeout: 15 * time.Second},
 	}
 
 	Register(NewServiceLight(c))

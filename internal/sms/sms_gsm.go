@@ -43,7 +43,7 @@ func New(baseURL, password, verifKey, xorKey, freeKey, hmacKey, whitelist string
 	modemURL, _ := url.Parse(baseURL)
 
 	c := &Client{
-		http:        &http.Client{Timeout: 10 * time.Second, Jar: jar},
+		http:        &http.Client{Timeout: 15 * time.Second, Jar: jar},
 		jar:         jar,
 		baseURL:     baseURL + "/jrd/webapi",
 		modemURL:    modemURL,
