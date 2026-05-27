@@ -1,0 +1,26 @@
+# --- Binaires et Build ---
+# Exclure le binaire compilé et les fichiers temporaires de build
+/assistant-domotique
+*.exe
+*.test
+*.out
+
+# --- Variables d'environnement ---
+# Ne jamais versionner les fichiers contenant des secrets
+.env
+.env.local
+.env.*.local
+
+# --- IntelliJ / JetBrains ---
+# Exclure les fichiers de configuration spécifiques à l'IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+*.iws
+.shelf/
+.flattened-pom.xml
+
+# --- Docker compose ---
+# Exclure le docker compose
+docker-compose.yml

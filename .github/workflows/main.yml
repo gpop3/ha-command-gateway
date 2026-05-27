@@ -1,0 +1,79 @@
+name: Go Quality & Build
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "*.*.*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  quality-and-security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Debug build tags
+        run: |
+          go list -tags nvosk -f '{{.GoFiles}}' ha-command-gateway/internal/voice
+          go list -tags nvosk -f '{{.IgnoredGoFiles}}' ha-command-gateway/internal/voice
+
+      - name: Vet
+        run: |
+          go clean -cache
+          go vet -tags nvosk ./...
+
+      - name: staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+          install-go: false
+          build-tags: nvosk
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: --timeout=5m --build-tags nvosk
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck -tags nvosk ./...
+
+  build:
+    needs: quality-and-security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build (linux/arm64)
+        run: GOOS=linux GOARCH=arm64 go build -tags nvosk -v -o assistant-arm64 ./cmd/assistant/
+        env:
+          CGO_ENABLED: 0
