@@ -225,7 +225,6 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 				if err != nil {
 					log.Printf("⚠️ [SMS] suppression échouée SMSId=%.0f : %v", smsID, err)
 				} else {
-					delete(c.derniersLus, key)
 					log.Printf("✅ [SMS] supprimé SMSId=%.0f résultat: %v", smsID, result)
 				}
 
