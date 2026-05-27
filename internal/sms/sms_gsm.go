@@ -204,7 +204,7 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 
 				if smsType != 2 && numeroConnu {
 					if contenu != "" {
-						log.Printf("📱 SMS reçu de %s : %s", numero, contenu)
+						log.Printf("📱 SMS reçu de %s : %s", numero, msg)
 						canal <- SMS{
 							Numero:  numero,
 							Message: strings.ToLower(contenu),
@@ -217,13 +217,15 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 				}
 
 				// Supprimer le SMS après traitement
-				_, err := c.call("DeleteSMS", map[string]interface{}{
-					"DelFlag":   2, // SMS_DELETE_FLAG_Content
+				result, err := c.call("DeleteSMS", map[string]interface{}{
+					"DelFlag":   2,
 					"ContactId": int(contactID),
 					"SMSId":     int(smsID),
 				})
 				if err != nil {
-					fmt.Println(err)
+					log.Printf("⚠️ [SMS] suppression échouée SMSId=%.0f : %v", smsID, err)
+				} else {
+					log.Printf("✅ [SMS] supprimé SMSId=%.0f résultat: %v", smsID, result)
 				}
 
 			}
