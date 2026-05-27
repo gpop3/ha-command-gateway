@@ -184,36 +184,36 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 				key := fmt.Sprintf("%.0f", smsID)
 				idsActuels[key] = true
 
-				if c.derniersLus[key] {
-					continue
-				}
-				c.derniersLus[key] = true
+				if !c.derniersLus[key] {
+					c.derniersLus[key] = true
 
-				var numero string
-				switch v := contact["PhoneNumber"].(type) {
-				case []interface{}:
-					if len(v) > 0 {
-						numero, _ = v[0].(string)
+					var numero string
+					switch v := contact["PhoneNumber"].(type) {
+					case []interface{}:
+						if len(v) > 0 {
+							numero, _ = v[0].(string)
+						}
+					case string:
+						numero = v
 					}
-				case string:
-					numero = v
-				}
 
-				numeroConnu := slices.Contains(c.whitelist, numero)
-				contenu, _ := msg["SMSContent"].(string)
+					numeroConnu := slices.Contains(c.whitelist, numero)
+					contenu, _ := msg["SMSContent"].(string)
 
-				if smsType != 2 && numeroConnu {
-					if contenu != "" {
-						log.Printf("📱 SMS reçu de %s : %s", numero, msg)
-						canal <- SMS{
-							Numero:  numero,
-							Message: strings.ToLower(contenu),
+					if smsType != 2 && numeroConnu {
+						if contenu != "" {
+							log.Printf("📱 SMS reçu de %s : %s", numero, msg)
+							canal <- SMS{
+								Numero:  numero,
+								Message: strings.ToLower(contenu),
+							}
 						}
 					}
-				}
 
-				if !numeroConnu {
-					log.Printf("📱 SMS reçu d'un numéro inconnu %s : %s", numero, contenu)
+					if !numeroConnu {
+						log.Printf("📱 SMS reçu d'un numéro inconnu %s : %s", numero, contenu)
+					}
+
 				}
 
 				// Supprimer le SMS après traitement
@@ -225,6 +225,7 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 				if err != nil {
 					log.Printf("⚠️ [SMS] suppression échouée SMSId=%.0f : %v", smsID, err)
 				} else {
+					delete(c.derniersLus, key)
 					log.Printf("✅ [SMS] supprimé SMSId=%.0f résultat: %v", smsID, result)
 				}
 
