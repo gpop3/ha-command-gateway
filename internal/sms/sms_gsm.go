@@ -180,7 +180,7 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 			}
 			for _, msg := range messages {
 				smsID, _ := msg["SMSId"].(float64)
-				smsType, _ := contact["SMSType"].(float64)
+				smsType, _ := msg["SMSType"].(float64)
 				key := fmt.Sprintf("%.0f", smsID)
 				idsActuels[key] = true
 
