@@ -66,7 +66,3 @@ func (s *ServiceCustom) ScoreDomaine(estAction bool) int {
 	}
 	return 0
 }
-
-func (s *ServiceCustom) ExtraireParams(texte string) map[string]interface{} {
-	return s.serviceBase.ExtraireParams(texte)
-}
