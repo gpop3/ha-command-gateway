@@ -60,8 +60,7 @@ RUN ldconfig
 COPY --from=builder /app/assistant /usr/local/bin/assistant
 
 # Installer piper-tts[http] avec le wheel ARM64 Linux
-RUN pip install --no-cache-dir \
-    "piper-tts[http] @ https://github.com/OHF-Voice/piper1-gpl/releases/download/v1.4.2/piper_tts-1.4.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl"
+RUN pip install --break-system-packages --no-cache-dir "piper-tts[http] @ https://github.com/OHF-Voice/piper1-gpl/releases/download/v1.4.2/piper_tts-1.4.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl"
 
 # Voix française Piper
 RUN mkdir -p /opt/piper-voices && \

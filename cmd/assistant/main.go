@@ -147,7 +147,7 @@ func resolveTranscriptMode(cfg *config.Config) transcribe.Mode {
 }
 
 func modeCommand(inputText string, etat *int, analyseur *nlp.Analyseur) bool {
-	reponse, match := analyseur.AnalyserEtExecuter(inputText)
+	reponse, match, _, _ := analyseur.AnalyserEtExecuter(inputText)
 	fmt.Println("Réponse :", reponse)
 	speech.Parler(reponse)
 	fmt.Println("--- En attente d'un nouvel ordre ---")
@@ -199,7 +199,7 @@ func traiterEtat(inputText string, etat *int, numeroTel string, analyseur *nlp.A
 
 	case ModeSmsCommand:
 		if len(texte) > 3 {
-			reponse, _ := analyseur.AnalyserEtExecuter(inputText)
+			reponse, _, _, _ := analyseur.AnalyserEtExecuter(inputText)
 			fmt.Println("Réponse SMS :", reponse)
 			if err := gsmClient.EnvoyerSMS(numeroTel, reponse); err != nil {
 				log.Printf("❌ Envoi SMS échoué : %v", err)

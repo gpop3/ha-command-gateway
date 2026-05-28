@@ -205,7 +205,7 @@ func (a *Analyseur) GenererSystemPrompt() string {
 // ---- Point d'entrée principal ----
 
 // AnalyserEtExecuter traite une commande textuelle et retourne la réponse
-func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool) {
+func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool, bool, *ha.Appareil) {
 	nettoye := strings.ToLower(texte)
 
 	verbe, estAction := detecterVerbe(nettoye)
@@ -216,12 +216,12 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool) {
 	}
 
 	if err := a.RafraichirCatalogue(); err != nil {
-		return "Erreur : Impossible de joindre Home Assistant.", false
+		return "Erreur : Impossible de joindre Home Assistant.", false, false, nil
 	}
 
 	meilleurMatch, meilleurScore := a.TrouverMeilleurMatch(nettoye, estAction, domainesCandidats)
 	if meilleurScore < 30 {
-		return "Je n'ai pas compris", false
+		return "Je n'ai pas compris", false, false, nil
 	}
 
 	params := extraireParamsParService(nettoye, meilleurMatch.Domain)
@@ -236,9 +236,9 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool) {
 	}
 
 	if estAction {
-		return a.executerAction(meilleurMatch, verbe, params), true
+		return a.executerAction(meilleurMatch, verbe, params), true, true, &meilleurMatch
 	}
-	return a.lireEtat(meilleurMatch, nettoye), true
+	return a.lireEtat(meilleurMatch, nettoye), true, false, &meilleurMatch
 }
 
 // ---- Détection du verbe ----

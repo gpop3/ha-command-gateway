@@ -107,7 +107,12 @@ func genererPCM(texte string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("piper HTTP : %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
 
 	wav, err := io.ReadAll(resp.Body)
 	if err != nil {
