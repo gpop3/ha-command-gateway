@@ -115,3 +115,17 @@ func FormaterEtatClimate(nom string, etat *EtatComplet) string {
 	return fmt.Sprintf(i18n.T("climate.format"),
 		nom, etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State)
 }
+
+func FormaterEtatClimateVoix(nom string, etat *EtatComplet) string {
+	var action string
+	switch etat.Attributes.HvacAction {
+	case "heating":
+		action = i18n.T("climate.chauffe")
+	case "cooling":
+		action = i18n.T("climate.refroid")
+	default:
+		action = i18n.T("climate.repos")
+	}
+	return fmt.Sprintf(i18n.T("assistant.retour.climate"),
+		nom, etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State)
+}

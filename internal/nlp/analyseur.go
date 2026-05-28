@@ -204,8 +204,14 @@ func (a *Analyseur) GenererSystemPrompt() string {
 
 // ---- Point d'entrée principal ----
 
+type EtatType struct {
+	TextSms   string
+	TexteVoix string
+	Date      *string
+}
+
 // AnalyserEtExecuter traite une commande textuelle et retourne la réponse
-func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool, bool, *ha.Appareil) {
+func (a *Analyseur) AnalyserEtExecuter(texte string) (*EtatType, string, bool, bool, *ha.Appareil) {
 	nettoye := strings.ToLower(texte)
 
 	verbe, estAction := detecterVerbe(nettoye)
@@ -216,12 +222,12 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool, bool, *ha.Ap
 	}
 
 	if err := a.RafraichirCatalogue(); err != nil {
-		return "Erreur : Impossible de joindre Home Assistant.", false, false, nil
+		return nil, verbe, false, false, nil
 	}
 
 	meilleurMatch, meilleurScore := a.TrouverMeilleurMatch(nettoye, estAction, domainesCandidats)
 	if meilleurScore < 30 {
-		return "Je n'ai pas compris", false, false, nil
+		return nil, verbe, false, false, nil
 	}
 
 	params := extraireParamsParService(nettoye, meilleurMatch.Domain)
@@ -236,10 +242,12 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool, bool, *ha.Ap
 	}
 
 	if estAction {
-		return a.executerAction(meilleurMatch, verbe, params), true, true, &meilleurMatch
+		etat := a.executerAction(meilleurMatch, verbe, params)
+
+		return &EtatType{etat, etat, nil}, verbe, true, true, &meilleurMatch
 	}
-	etat, _ := a.lireEtat(meilleurMatch, nettoye)
-	return etat, true, false, &meilleurMatch
+	etat := a.lireEtat(meilleurMatch, nettoye)
+	return &etat, verbe, true, false, &meilleurMatch
 }
 
 // ---- Détection du verbe ----
@@ -518,26 +526,51 @@ func (a *Analyseur) executerAction(app ha.Appareil, verbe string, params map[str
 
 // ---- Lecture d'état ----
 
-func (a *Analyseur) lireEtat(app ha.Appareil, texteNettoye string) (string, string) {
+func (a *Analyseur) lireEtat(app ha.Appareil, texteNettoye string) EtatType {
 	dateCible, demandeHistorique := text.DetecterHeure(texteNettoye)
 
 	if demandeHistorique {
 		etat, err := a.haClient.RecupererHistorique(app.EntityID, dateCible)
 		if err != nil {
-			return fmt.Sprintf("⚠️ Erreur historique pour [%s] à %s.", app.FriendlyName, dateCible.Format("15h04")), i18n.T("erreur.lecture.parler")
+			return EtatType{
+				fmt.Sprintf("⚠️ Erreur historique pour [%s] à %s.", app.FriendlyName, dateCible.Format("15h04")),
+				i18n.T("erreur.lecture.parler"),
+				&[]string{dateCible.Format("15h04")}[0],
+			}
 		}
 		if app.Domain == "climate" {
-			return ha.FormaterEtatClimate(app.FriendlyName, etat), ha.FormaterEtatClimate(app.FriendlyName, etat)
+			return EtatType{
+				ha.FormaterEtatClimate(app.FriendlyName, etat),
+				ha.FormaterEtatClimateVoix(app.FriendlyName, etat),
+				&[]string{dateCible.Format("15h04")}[0],
+			}
 		}
-		return fmt.Sprintf("⏳ [%s] À %s, l'état était : %s.", app.FriendlyName, dateCible.Format("15h04"), etat.State), etat.State
+		return EtatType{
+			fmt.Sprintf("⏳ [%s] À %s, l'état était : %s.", app.FriendlyName, dateCible.Format("15h04"), etat.State),
+			etat.State,
+			&[]string{dateCible.Format("15h04")}[0],
+		}
 	}
 
 	etat, err := a.haClient.RecupererEtatLive(app.EntityID)
 	if err != nil {
-		return i18n.T("erreur.lecture.live", app.FriendlyName) + fmt.Sprintf(" (%v)", err), i18n.T("erreur.lecture.parler")
+		return EtatType{
+			i18n.T("erreur.lecture.live", app.FriendlyName) + fmt.Sprintf(" (%v)", err),
+			ha.FormaterEtatClimateVoix(app.FriendlyName, etat),
+			nil,
+		}
 	}
 	if app.Domain == "climate" {
-		return ha.FormaterEtatClimate(app.FriendlyName, etat), ha.FormaterEtatClimate(app.FriendlyName, etat)
+		return EtatType{
+			ha.FormaterEtatClimate(app.FriendlyName, etat),
+			etat.State,
+			nil,
+		}
 	}
-	return fmt.Sprintf("📊 [%s] État actuel : %s.", app.FriendlyName, etat.State), etat.State
+
+	return EtatType{
+		fmt.Sprintf("📊 [%s] État actuel : %s.", app.FriendlyName, etat.State),
+		etat.State,
+		nil,
+	}
 }

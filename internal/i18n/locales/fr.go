@@ -11,7 +11,6 @@ func init() {
 		"erreur.domaine":        "❌ Domaine '%s' non supporté.",
 		"erreur.lecture.live":   "⚠️ Erreur lecture live de [%s].",
 		"erreur.historique":     "⚠️ Erreur historique pour [%s] à %s.",
-		"pas.compris":           "Je n'ai pas compris.",
 		"traitement":            "Traitement en cours.",
 		"ok.action":             "✅ L'ordre a été exécuté sur : %s.",
 		"ok.message":            "✅ %s",
@@ -23,7 +22,15 @@ func init() {
 		"assistant.ecoute":    "Je vous écoute.",
 		"assistant.timeout":   "⏱️ Timeout → retour veille",
 		"assistant.mot.cle":   "👉 Mot clé détecté !",
-		"assistant.attente":   "--- En attente d'un nouvel ordre ---",
+
+		// --- Voix ----
+		"assistant.attente":            "--- En attente d'un nouvel ordre ---",
+		"assistant.retour.etat":        "L'état actuel de %s est : %s",
+		"assistant.retour.etat.heure":  "L'état de %s à %s était %s",
+		"assistant.retour.action":      "Action \"%s\" exécuté sur %s",
+		"assistant.retour.erreur":      "Une erreur est survenue",
+		"assistant.retour.pas.compris": "Je n'ai pas compris.",
+		"assistant.retour.climate":     "Température actuelle : %.1f degrés. Consigne : %.1f dégrés• Le statut est %s avec un mode %s",
 
 		// ---- Audio / transcription ----
 		"audio.micro":          "🎤 Micro activé en continu.",
