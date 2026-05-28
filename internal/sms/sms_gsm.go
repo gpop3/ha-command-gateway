@@ -164,20 +164,25 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 
 		contacts, err := c.getSMSContacts()
 		if err != nil {
-			if strings.Contains(err.Error(), "-32699") || strings.Contains(err.Error(), "-32697") {
-				if loginErr := c.login(); loginErr != nil {
-					fmt.Println(loginErr)
-				}
+			log.Printf("⚠️ [SMS] erreur contacts : %v — reconnexion...", err)
+			if loginErr := c.login(); loginErr != nil {
+				log.Printf("⚠️ [SMS] reconnexion échouée : %v", loginErr)
 			}
 			continue
 		}
 
 		for _, contact := range contacts {
 			contactID, _ := contact["ContactId"].(float64)
+
 			messages, err := c.getSMSContent(int(contactID))
 			if err != nil {
+				log.Printf("⚠️ [SMS] erreur contenu contactID=%d : %v — reconnexion...", int(contactID), err)
+				if loginErr := c.login(); loginErr != nil {
+					log.Printf("⚠️ [SMS] reconnexion échouée : %v", loginErr)
+				}
 				continue
 			}
+
 			for _, msg := range messages {
 				smsID, _ := msg["SMSId"].(float64)
 				smsType, _ := msg["SMSType"].(float64)
