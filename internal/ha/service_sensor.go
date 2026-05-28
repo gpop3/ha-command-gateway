@@ -13,10 +13,7 @@ func (s *ServiceSensor) Executer(entityID, action string, params map[string]inte
 }
 
 func (s *ServiceSensor) ScoreDomaine(estAction bool) int {
-	if !estAction {
-		return 10
-	}
-	return 0
+	return 20
 }
 
 func (s *ServiceSensor) ExtraireParams(texte string) map[string]interface{} {
