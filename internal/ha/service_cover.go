@@ -27,7 +27,7 @@ func (s *ServiceCover) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 40
 	}
-	return 20
+	return 10
 }
 
 // ExtraireParams hérite des universels (pourcentage) — pas de params spécifiques supplémentaires
