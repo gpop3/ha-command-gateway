@@ -29,7 +29,7 @@ ENV CGO_ENABLED=1
 ENV CGO_CFLAGS="-I/usr/local/include"
 ENV CGO_LDFLAGS="-L/usr/local/lib -lvosk"
 
-RUN go build -o assistant ./cmd/assistant/
+RUN go build -ldflags="-s -w" -o assistant ./cmd/assistant/
 
 # ─────────────────────────────────────────────
 # Stage 2 : Image finale (légère)
