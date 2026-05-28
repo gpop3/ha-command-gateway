@@ -69,11 +69,11 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 }
 
 // AttendreWS attente du WS
-func (c *Client) AttendreWS(timeout time.Duration) {
+func (c *Client) AttendreWS() {
 	if c.ws == nil {
 		return
 	}
-	if !c.ws.WaitReady(timeout) {
+	if !c.ws.WaitReady(c.timeout * time.Second) {
 		log.Printf("⚠️ [WS] timeout attente cache — fallback HTTP")
 	}
 }
