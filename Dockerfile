@@ -82,7 +82,7 @@ ENV VOSK_MODEL_PATH=/opt/vosk-model
 ENV PIPER_BIN=/opt/piper/piper
 ENV PIPER_MODEL=/opt/piper-voices/fr_FR-siwis-medium.onnx
 
-COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["entrypoint.sh"]
