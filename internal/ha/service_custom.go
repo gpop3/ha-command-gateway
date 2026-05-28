@@ -7,10 +7,9 @@ import (
 // ServiceCustom est un service générique chargé depuis la config YAML
 type ServiceCustom struct {
 	serviceBase
-	mots           []string
-	estParDefaut   bool
-	scoreDomaine   int
-	extraireParams func(texte string) map[string]interface{}
+	mots         []string
+	estParDefaut bool
+	scoreDomaine int
 }
 
 // ConfigService décrit un service custom dans services.yaml
@@ -65,4 +64,8 @@ func (s *ServiceCustom) ScoreDomaine(estAction bool) int {
 		return 30
 	}
 	return 0
+}
+
+func (s *ServiceCustom) ExtraireParams(texte string) map[string]interface{} {
+	return s.serviceBase.ExtraireParams(texte)
 }
