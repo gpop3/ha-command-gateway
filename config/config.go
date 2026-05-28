@@ -87,7 +87,7 @@ func Load() *Config {
 		HAToken:     getEnv("HA_TOKEN", ""),
 		HAPieces:    getEnv("MES_PIECES", ""),
 		HAWebsocket: getEnv("HA_WEBSOCKET", "true") == "true",
-		HATimeout:   getEnvInt("HA_TIMEOUT", 5),
+		HATimeout:   getEnvInt("HA_TIMEOUT", 10),
 
 		// Gestion service
 		ServicesFile: getEnv("SERVICES_FILE", "services.yaml"),
