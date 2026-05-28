@@ -36,7 +36,6 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 	ws, err := newWSClient(url, token, timeoutClient)
 	if err != nil {
 		log.Printf("⚠️ [WS] WebSocket indisponible, fallback HTTP : %v", err)
-		ws = nil
 	} else {
 		c.ws = ws
 	}
