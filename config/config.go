@@ -48,6 +48,7 @@ type Config struct {
 	GSMPin  string
 
 	// piper
+	PiperUrl   string
 	PiperBin   string
 	PiperModel string
 
@@ -122,6 +123,7 @@ func Load() *Config {
 		// Piper
 		PiperBin:   getEnv("PIPER_BIN", ""),
 		PiperModel: getEnv("PIPER_MODEL", ""),
+		PiperUrl:   getEnv("PIPER_URL", "http://localhost:5000"),
 
 		// Notify
 		NotifyDevice: getEnv("NOTIFY_DEVICE", ""),

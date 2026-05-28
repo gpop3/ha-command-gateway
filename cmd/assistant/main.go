@@ -38,7 +38,7 @@ func main() {
 
 	analyseur := nlp.New(haClient, cfg.ActivePreselection)
 
-	if err := speech.Init(cfg.PiperBin, cfg.PiperModel, cfg.AlsaDevice); err != nil {
+	if err := speech.Init(cfg.PiperUrl, cfg.AlsaDevice); err != nil {
 		log.Fatalf("Erreur init TTS : %v", err)
 	}
 
@@ -107,7 +107,7 @@ func main() {
 			text := console.EcouterConsole()
 			canalCommandes <- input.Commande{
 				Texte:     text,
-				Etat:      &etat,
+				Etat:      &etatSms,
 				NumeroTel: "",
 			}
 		}

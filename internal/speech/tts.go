@@ -1,67 +1,69 @@
 package speech
 
 import (
+	"bytes"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 )
+
+const cacheDir = "/tmp/tts-cache"
 
 var (
-	mu      sync.Mutex
-	started bool
-	piperIn io.WriteCloser
-	aplayIn io.WriteCloser
+	mu         sync.Mutex
+	started    bool
+	alsaDev    string
+	piperURL   string
+	httpClient = &http.Client{Timeout: 30 * time.Second}
 )
 
-func Init(piperBin, piperModel, alsaDevice string) error {
-	aplay := exec.Command("aplay",
-		"-D", alsaDevice,
-		"-r", "22050",
-		"-f", "S16_LE",
-		"-c", "1",
-		"--buffer-time=500000",
-		"-t", "raw",
-		"-",
-	)
-	aplayInPipe, err := aplay.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("aplay stdin: %w", err)
-	}
-	aplay.Stderr = os.Stderr
-	if err := aplay.Start(); err != nil {
-		return fmt.Errorf("aplay start: %w", err)
-	}
-	aplayIn = aplayInPipe
-
-	// Démarrer Piper avec stdin/stdout pipes
-	piper := exec.Command(piperBin, "--model", piperModel, "--output-raw")
-	piperInPipe, err := piper.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("piper stdin: %w", err)
-	}
-	piperOut, err := piper.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("piper stdout: %w", err)
-	}
-	piper.Stderr = os.Stderr
-	if err := piper.Start(); err != nil {
-		return fmt.Errorf("piper start: %w", err)
-	}
-	piperIn = piperInPipe
-
-	// Goroutine : sortie Piper → aplay stdin
-	go func() {
-		if _, err := io.Copy(aplayIn, piperOut); err != nil {
-			fmt.Printf("⚠️ [TTS] pipe piper→aplay : %v\n", err)
-		}
-	}()
-
+// Init configure le TTS
+func Init(piperURL_, alsaDevice string) error {
+	piperURL = piperURL_
+	alsaDev = alsaDevice
 	started = true
-	fmt.Println("TTS pret.")
+
+	_ = os.MkdirAll(cacheDir, 0755)
+
+	fmt.Println("TTS prêt.")
 	return nil
+}
+
+// Parler synthétise le texte et le joue
+func Parler(texte string) {
+	if !started {
+		fmt.Println("TTS non initialisé")
+		return
+	}
+
+	texte = strings.ReplaceAll(texte, "\n", " ")
+	texte = strings.TrimSpace(texte)
+	if texte == "" {
+		return
+	}
+
+	fmt.Printf("[TTS] message : %s\n", texte)
+
+	path := cheminCache(texte)
+	pcm, err := os.ReadFile(path)
+	if err != nil {
+		pcm, err = genererPCM(texte)
+		if err != nil {
+			fmt.Printf("⚠️ [TTS] erreur Piper : %v\n", err)
+			return
+		}
+		go func() { _ = os.WriteFile(path, pcm, 0644) }()
+	}
+
+	jouerPCM(pcm)
 }
 
 // Bip joue un bip sonore court
@@ -69,9 +71,6 @@ func Bip() {
 	if !started {
 		return
 	}
-	mu.Lock()
-	defer mu.Unlock()
-
 	const sampleRate = 22050
 	samples := int(math.Round(float64(sampleRate) * 0.15))
 	buf := make([]byte, samples*2)
@@ -90,24 +89,54 @@ func Bip() {
 		buf[i*2+1] = byte(val >> 8)
 	}
 
-	if _, err := aplayIn.Write(buf); err != nil {
-		return
-	}
-	silence := make([]byte, sampleRate*2)
-	_, _ = aplayIn.Write(silence)
+	silence := make([]byte, sampleRate/5*2)
+	jouerPCM(append(buf, silence...))
 }
 
-// Parler envoie le texte à Piper via stdin
-func Parler(texte string) {
-	if !started {
-		fmt.Println("TTS non initialise")
-		return
+// ---- Fonctions internes ----
+
+// cheminCache retourne le chemin du fichier cache pour un texte donné
+func cheminCache(texte string) string {
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(texte)))
+	return filepath.Join(cacheDir, hash+".pcm")
+}
+
+// genererPCM appelle Piper HTTP et retourne le PCM brut
+func genererPCM(texte string) ([]byte, error) {
+	resp, err := httpClient.Post(piperURL, "text/plain", strings.NewReader(texte))
+	if err != nil {
+		return nil, fmt.Errorf("piper HTTP : %w", err)
 	}
+	defer resp.Body.Close()
+
+	wav, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("lecture WAV : %w", err)
+	}
+
+	if len(wav) > 44 && string(wav[:4]) == "RIFF" {
+		return wav[44:], nil
+	}
+	return wav, nil
+}
+
+// jouerPCM lance aplay, joue le PCM et attend la fin
+func jouerPCM(pcm []byte) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	fmt.Printf("[TTS] message : %v\n", texte)
-	if _, err := fmt.Fprintln(piperIn, texte); err != nil {
-		fmt.Printf("⚠️ [TTS] erreur écriture piper : %v\n", err)
+	aplay := exec.Command("aplay",
+		"-D", alsaDev,
+		"-r", "22050",
+		"-f", "S16_LE",
+		"-c", "1",
+		"-t", "raw",
+		"-",
+	)
+	aplay.Stdin = bytes.NewReader(pcm)
+	aplay.Stderr = os.Stderr
+
+	if err := aplay.Run(); err != nil {
+		fmt.Printf("⚠️ [TTS] aplay : %v\n", err)
 	}
 }

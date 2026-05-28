@@ -47,6 +47,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatomic1 \
     ca-certificates \
     wget \
+    # Python
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copier libvosk depuis le builder
@@ -56,10 +59,9 @@ RUN ldconfig
 # Copier le binaire compilé
 COPY --from=builder /app/assistant /usr/local/bin/assistant
 
-# Piper TTS (binaire + voix)
-RUN wget -q https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_aarch64.tar.gz \
-    && tar -xzf piper_linux_aarch64.tar.gz -C /opt/ \
-    && rm piper_linux_aarch64.tar.gz
+# Installer piper-tts[http] avec le wheel ARM64 Linux
+RUN pip install --no-cache-dir \
+    "piper-tts[http] @ https://github.com/OHF-Voice/piper1-gpl/releases/download/v1.4.2/piper_tts-1.4.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl"
 
 # Voix française Piper
 RUN mkdir -p /opt/piper-voices && \
@@ -80,5 +82,7 @@ ENV VOSK_MODEL_PATH=/opt/vosk-model
 ENV PIPER_BIN=/opt/piper/piper
 ENV PIPER_MODEL=/opt/piper-voices/fr_FR-siwis-medium.onnx
 
-# Le .env est monté en volume, pas copié dans l'image
-CMD ["assistant"]
+COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["entrypoint.sh"]
