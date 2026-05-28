@@ -236,12 +236,13 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*EtatType, string, bool, b
 	}
 
 	fmt.Printf("DEBUG estAction=%v domaine=%s\n", estAction, meilleurMatch.Domain)
+	estActionParDefaut := false
 	if svc, ok := ha.Lookup(meilleurMatch.Domain); ok && svc.EstActionParDefaut() {
 		fmt.Printf("DEBUG EstActionParDefaut → true\n")
-		estAction = true
+		estActionParDefaut = true
 	}
 
-	if estAction {
+	if estAction || estActionParDefaut {
 		etat := a.executerAction(meilleurMatch, verbe, params)
 
 		return &EtatType{etat, etat, nil}, verbe, true, true, &meilleurMatch
@@ -563,7 +564,7 @@ func (a *Analyseur) lireEtat(app ha.Appareil, texteNettoye string) EtatType {
 	if app.Domain == "climate" {
 		return EtatType{
 			ha.FormaterEtatClimate(app.FriendlyName, etat),
-			etat.State,
+			ha.FormaterEtatClimateVoix(app.FriendlyName, etat),
 			nil,
 		}
 	}
