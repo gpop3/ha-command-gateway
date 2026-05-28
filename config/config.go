@@ -20,6 +20,9 @@ type Config struct {
 	HAWebsocket bool
 	HATimeout   int
 
+	// services
+	ServicesFile string
+
 	// Raspberry Pi / Whisper
 	RaspberryPiIP string
 	WhisperURL    string // si vide, utilise RaspberryPiIP
@@ -85,6 +88,9 @@ func Load() *Config {
 		HAPieces:    getEnv("MES_PIECES", ""),
 		HAWebsocket: getEnv("HA_WEBSOCKET", "true") == "true",
 		HATimeout:   getEnvInt("HA_TIMEOUT", 5),
+
+		// Gestion service
+		ServicesFile: getEnv("SERVICES_FILE", "services.yaml"),
 
 		// Whisper / Raspberry Pi
 		RaspberryPiIP: getEnv("RASPBERRY_PI_IP", "localhost"),

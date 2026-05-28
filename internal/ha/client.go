@@ -63,6 +63,10 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 	Register(NewServiceAgenda(c))
 	Register(NewServiceWeather(c))
 
+	if err := LoadServicesFromFile(cfg.ServicesFile, c); err != nil {
+		log.Printf("⚠️ services.yaml : %v", err)
+	}
+
 	pieces = ParserPieces(piecesEnv)
 
 	return c
