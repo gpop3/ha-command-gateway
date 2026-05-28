@@ -245,7 +245,7 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*EtatType, string, bool, b
 	if estAction || estActionParDefaut {
 		etat := a.executerAction(meilleurMatch, verbe, params)
 
-		return &EtatType{etat, etat, nil}, verbe, true, true, &meilleurMatch
+		return &EtatType{etat, etat, nil}, verbe, true, estAction, &meilleurMatch
 	}
 	etat := a.lireEtat(meilleurMatch, nettoye)
 	return &etat, verbe, true, false, &meilleurMatch

@@ -127,5 +127,5 @@ func FormaterEtatClimateVoix(nom string, etat *EtatComplet) string {
 		action = i18n.T("climate.repos")
 	}
 	return fmt.Sprintf(i18n.T("assistant.retour.climate"),
-		nom, etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State)
+		etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State)
 }

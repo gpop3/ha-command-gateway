@@ -30,7 +30,7 @@ func init() {
 		"assistant.retour.action":      "Action \"%s\" exécuté sur %s",
 		"assistant.retour.erreur":      "Une erreur est survenue",
 		"assistant.retour.pas.compris": "Je n'ai pas compris.",
-		"assistant.retour.climate":     "Température actuelle : %.1f degrés. Consigne : %.1f dégrés• Le statut est %s avec un mode %s",
+		"assistant.retour.climate":     "Température actuelle : %.1f degrés. Consigne : %.1f degrés. Le statut est %s avec un mode %s.",
 
 		// ---- Audio / transcription ----
 		"audio.micro":          "🎤 Micro activé en continu.",
