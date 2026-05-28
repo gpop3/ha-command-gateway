@@ -105,6 +105,7 @@ func Parler(texte string) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	fmt.Printf("[TTS] message : %v\n", texte)
 	if _, err := fmt.Fprintln(piperIn, texte); err != nil {
 		fmt.Printf("⚠️ [TTS] erreur écriture piper : %v\n", err)
 	}
