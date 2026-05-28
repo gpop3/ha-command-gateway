@@ -151,18 +151,18 @@ func modeCommand(inputText string, etat *int, analyseur *nlp.Analyseur) bool {
 	fmt.Println("Réponse : ", reponse)
 	if appareil == nil {
 		if match {
-			speech.Parler(i18n.T("assistant.retour.erreur"))
+			speech.Parler("assistant.retour.erreur")
 		} else {
-			speech.Parler(i18n.T("assistant.retour.pas.compris"))
+			speech.Parler("assistant.retour.pas.compris")
 		}
 	} else {
 		if isAction {
-			speech.Parler(i18n.T("assistant.retour.action", verbe, appareil.FriendlyName))
+			speech.Parler("assistant.retour.action", verbe, appareil.FriendlyName)
 		} else {
 			if reponse.Date != nil {
-				speech.Parler(i18n.T("assistant.retour.etat.heure", appareil.FriendlyName, reponse.Date, reponse.TexteVoix))
+				speech.Parler("assistant.retour.etat.heure", appareil.FriendlyName, reponse.Date, reponse.TexteVoix)
 			} else {
-				speech.Parler(i18n.T("assistant.retour.etat", appareil.FriendlyName, reponse.TexteVoix))
+				speech.Parler("assistant.retour.etat", appareil.FriendlyName, reponse.TexteVoix)
 			}
 		}
 	}

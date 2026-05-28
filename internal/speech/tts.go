@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"io"
 	"math"
 	"net/http"
@@ -34,37 +35,121 @@ func Init(piperURL_, alsaDevice string) error {
 
 	_ = os.MkdirAll(cacheDir, 0755)
 
-	fmt.Println("TTS prêt.")
+	fmt.Println("TTS prêt avec cache par composants.")
 	return nil
 }
 
-// Parler synthétise le texte et le joue
-func Parler(texte string) {
+// Parler prend la clé i18n, le pattern de traduction brute et ses arguments.
+// Exemple : Parler("maison.temp.ligne", "• %s : %s°C\n", "Salon", "22.5")
+// Parler s'adapte automatiquement :
+// - Si cleEtTexte est une clé i18n (ex: "maison.temp.ligne"), elle utilise le pattern et les args.
+// - Si cleEtTexte est une phrase brute (ex: "Attention, la voiture est ouverte"), elle gère le cache par son hash MD5.
+func Parler(cleEtTexte string, args ...interface{}) {
 	if !started {
 		fmt.Println("TTS non initialisé")
 		return
 	}
 
-	texte = strings.ReplaceAll(texte, "\n", " ")
-	texte = strings.TrimSpace(texte)
-	if texte == "" {
+	cleEtTexte = strings.ReplaceAll(cleEtTexte, "\n", " ")
+	cleEtTexte = strings.TrimSpace(cleEtTexte)
+	if cleEtTexte == "" {
 		return
 	}
 
-	fmt.Printf("[TTS] message : %s\n", texte)
+	var pcmGlobal []byte
 
-	path := cheminCache(texte)
-	pcm, err := os.ReadFile(path)
-	if err != nil {
-		pcm, err = genererPCM(texte)
+	if len(args) == 0 && (strings.Contains(cleEtTexte, " ") || !estUneCleI18n(cleEtTexte)) {
+		// Le hash du texte brut sert d'ID unique de cache
+		idCache := fmt.Sprintf("raw_%x", md5.Sum([]byte(cleEtTexte)))
+		pcm, err := obtenirOuGenerer(idCache, cleEtTexte)
 		if err != nil {
-			fmt.Printf("⚠️ [TTS] erreur Piper : %v\n", err)
+			fmt.Printf("⚠️ [TTS] Erreur texte brut : %v\n", err)
 			return
 		}
-		go func() { _ = os.WriteFile(path, pcm, 0644) }()
+		pcmGlobal = pcm
+	} else {
+		// 2. CAS AVEC CLÉ I18N (Le code de découpage précédent)
+		// Ici, cleEtTexte est considéré comme la CLÉ (ex: "maison.temp.ligne")
+		// On va chercher sa traduction brute (le pattern) depuis ton package locales
+		pattern := recupererPatternDepuisI18n(cleEtTexte)
+
+		if len(args) == 0 {
+			pcm, err := obtenirOuGenerer(cleEtTexte, pattern)
+			if err != nil {
+				fmt.Printf("⚠️ [TTS] Erreur : %v\n", err)
+				return
+			}
+			pcmGlobal = pcm
+		} else {
+			format := pattern
+			verbes := []string{"%v", "%s", "%d", "%.1f", "%.0f", "%02d"}
+			for _, v := range verbes {
+				format = strings.ReplaceAll(format, v, "||TAG||")
+			}
+			partiesStatiques := strings.Split(format, "||TAG||")
+
+			for i, partie := range partiesStatiques {
+				partie = strings.TrimSpace(partie)
+				if partie != "" {
+					idComposant := fmt.Sprintf("%s_part_%d", cleEtTexte, i)
+					pcm, err := obtenirOuGenerer(idComposant, partie)
+					if err == nil {
+						pcmGlobal = append(pcmGlobal, pcm...)
+					}
+				}
+
+				if i < len(args) {
+					valeurStr := fmt.Sprintf("%v", args[i])
+					valeurStr = strings.TrimSpace(valeurStr)
+					if valeurStr != "" {
+						idDyn := fmt.Sprintf("dyn_%x", md5.Sum([]byte(valeurStr)))
+						pcm, err := obtenirOuGenerer(idDyn, valeurStr)
+						if err == nil {
+							pcmGlobal = append(pcmGlobal, pcm...)
+						}
+					}
+				}
+			}
+		}
 	}
 
-	jouerPCM(pcm)
+	if len(pcmGlobal) > 0 {
+		jouerPCM(pcmGlobal)
+	}
+}
+
+// Permet de valider si la chaîne passée est une clé présente dans ton fichier de langue
+func estUneCleI18n(cle string) bool {
+	return i18n.Existe(cle)
+}
+
+// Récupère la vraie chaîne avec les %s depuis ton fichier de langue
+func recupererPatternDepuisI18n(cle string) string {
+	return i18n.GetPattern(cle)
+}
+
+// obtenirOuGenerer cherche le composant dans le cache via son ID unique, ou appelle Piper
+func obtenirOuGenerer(idCache string, texte string) ([]byte, error) {
+	path := filepath.Join(cacheDir, idCache+".pcm")
+
+	// 1. Tente de lire depuis le cache disque
+	if pcm, err := os.ReadFile(path); err == nil {
+		return pcm, nil
+	}
+
+	// 2. Absent du cache : génération via Piper
+	fmt.Printf("[TTS] Génération [%s] -> %s\n", idCache, texte)
+	pcm, err := genererPCM(texte)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Sauvegarde dans le cache de manière asynchrone pour ne pas bloquer le flux
+	go func() {
+		_ = os.WriteFile(path, pcm, 0644)
+	}()
+
+	return pcm, nil
 }
 
 // Bip joue un bip sonore court
@@ -94,24 +179,16 @@ func Bip() {
 	jouerPCM(append(buf, silence...))
 }
 
-// ---- Fonctions internes ----
-
-// cheminCache retourne le chemin du fichier cache pour un texte donné
-func cheminCache(texte string) string {
-	hash := fmt.Sprintf("%x", md5.Sum([]byte(texte)))
-	return filepath.Join(cacheDir, hash+".pcm")
-}
-
+// genererPCM appelle Piper HTTP et retourne le PCM brut (sans l'entête WAV de 44 octets)
 type PiperRequest struct {
 	Text string `json:"text"`
 }
 
-// genererPCM appelle Piper HTTP et retourne le PCM brut
 func genererPCM(texte string) ([]byte, error) {
 	payload := PiperRequest{Text: texte}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("erreur lors de l'envoi : %w", err)
+		return nil, fmt.Errorf("erreur json: %w", err)
 	}
 
 	resp, err := httpClient.Post(piperURL, "application/json", bytes.NewBuffer(jsonData))
@@ -136,7 +213,7 @@ func genererPCM(texte string) ([]byte, error) {
 	return wav, nil
 }
 
-// jouerPCM lance aplay, joue le PCM et attend la fin
+// jouerPCM lance aplay pour jouer la totalité du flux assemblé
 func jouerPCM(pcm []byte) {
 	mu.Lock()
 	defer mu.Unlock()

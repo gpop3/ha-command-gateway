@@ -52,3 +52,23 @@ func TD(cle, defaut string, args ...interface{}) string {
 	}
 	return result
 }
+
+func Existe(cle string) bool {
+	if _, ok := locales[courante][cle]; ok {
+		return true
+	}
+	if _, ok := locales["fr"][cle]; ok {
+		return true
+	}
+	return false
+}
+
+func GetPattern(cle string) string {
+	if msg, ok := locales[courante][cle]; ok {
+		return msg
+	}
+	if msg, ok := locales["fr"][cle]; ok {
+		return msg
+	}
+	return cle
+}
