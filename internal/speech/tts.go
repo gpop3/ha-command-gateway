@@ -6,8 +6,6 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"regexp"
-	"strings"
 	"sync"
 )
 
@@ -24,7 +22,7 @@ func Init(piperBin, piperModel, alsaDevice string) error {
 		"-r", "22050",
 		"-f", "S16_LE",
 		"-c", "1",
-		"--buffer-size=4096",
+		"--buffer-time=500000",
 		"-t", "raw",
 		"-",
 	)
@@ -99,16 +97,8 @@ func Bip() {
 	_, _ = aplayIn.Write(silence)
 }
 
-// nettoyerPourTTS nettoyage anti debug (provisoire)
-func nettoyerPourTTS(texte string) string {
-	// Supprimer emojis et caractères spéciaux
-	texte = regexp.MustCompile(`[^\p{L}\p{N}\s.,!?;:'-]`).ReplaceAllString(texte, "")
-	return strings.TrimSpace(texte)
-}
-
 // Parler envoie le texte à Piper via stdin
 func Parler(texte string) {
-	texte = nettoyerPourTTS(texte)
 	if !started {
 		fmt.Println("TTS non initialise")
 		return
