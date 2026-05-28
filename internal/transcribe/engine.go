@@ -2,7 +2,6 @@ package transcribe
 
 import (
 	"bytes"
-	"encoding/json"
 	"time"
 )
 
@@ -82,29 +81,7 @@ func (e *Engine) SetSystemPrompt(prompt string) {
 	}
 }
 
-// ---- Vosk helpers (utilisés dans la boucle audio de main.go) ----
-
-// ExtraireTexteVosk parse la réponse JSON de Vosk et retourne le texte reconnu
-func ExtraireTexteVosk(jsonBrut string) string {
-	var result struct {
-		Text         string `json:"text"`
-		Alternatives []struct {
-			Text string `json:"text"`
-		} `json:"alternatives"`
-	}
-	if err := json.Unmarshal([]byte(jsonBrut), &result); err != nil {
-		return ""
-	}
-	if result.Text != "" {
-		return result.Text
-	}
-	if len(result.Alternatives) > 0 {
-		return result.Alternatives[0].Text
-	}
-	return ""
-}
-
-// ---- Moteur Vosk (stub — transcription gérée dans main.go) ----
+// ---- Moteur Vosk (stub — transcription) ----
 
 type moteurVosk struct{}
 
@@ -115,11 +92,13 @@ func (v *moteurVosk) Transcribe(wavData *bytes.Buffer) (string, time.Duration, e
 // ---- Erreurs ----
 
 type ErrModeInconnu struct{ Mode string }
+
 func (e *ErrModeInconnu) Error() string {
 	return "mode de transcription inconnu : " + e.Mode
 }
 
 type ErrModeVosk struct{}
+
 func (e *ErrModeVosk) Error() string {
 	return "Vosk : la transcription passe par AcceptWaveform dans la boucle audio, pas par Engine.Transcribe()"
 }

@@ -9,21 +9,14 @@ import (
 	"sync"
 )
 
-const fifoPath = "/tmp/piper-input"
-
 var (
-	mu       sync.Mutex
-	started  bool
-	aplayInG io.WriteCloser
+	mu      sync.Mutex
+	started bool
+	piperIn io.WriteCloser
+	aplayIn io.WriteCloser
 )
 
 func Init(piperBin, piperModel, alsaDevice string) error {
-	_ = os.Remove(fifoPath)
-	if err := exec.Command("mkfifo", fifoPath).Run(); err != nil {
-		return fmt.Errorf("mkfifo: %w", err)
-	}
-
-	// Demarrer aplay UNE SEULE FOIS
 	aplay := exec.Command("aplay",
 		"-D", alsaDevice,
 		"-r", "22050",
@@ -32,7 +25,7 @@ func Init(piperBin, piperModel, alsaDevice string) error {
 		"-t", "raw",
 		"-",
 	)
-	aplayIn, err := aplay.StdinPipe()
+	aplayInPipe, err := aplay.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("aplay stdin: %w", err)
 	}
@@ -40,12 +33,14 @@ func Init(piperBin, piperModel, alsaDevice string) error {
 	if err := aplay.Start(); err != nil {
 		return fmt.Errorf("aplay start: %w", err)
 	}
-	aplayInG = aplayIn
+	aplayIn = aplayInPipe
 
-	// Demarrer Piper qui lit le FIFO
-	piper := exec.Command("sh", "-c",
-		fmt.Sprintf("tail -f %s | %s --model %s --output-raw", fifoPath, piperBin, piperModel),
-	)
+	// Démarrer Piper avec stdin/stdout pipes
+	piper := exec.Command(piperBin, "--model", piperModel, "--output-raw")
+	piperInPipe, err := piper.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("piper stdin: %w", err)
+	}
 	piperOut, err := piper.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("piper stdout: %w", err)
@@ -54,21 +49,12 @@ func Init(piperBin, piperModel, alsaDevice string) error {
 	if err := piper.Start(); err != nil {
 		return fmt.Errorf("piper start: %w", err)
 	}
+	piperIn = piperInPipe
 
-	// Goroutine : sortie Piper -> aplayInG
+	// Goroutine : sortie Piper → aplay stdin
 	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := piperOut.Read(buf)
-			if n > 0 {
-				_, err := aplayInG.Write(buf[:n])
-				if err != nil {
-					break
-				}
-			}
-			if err != nil {
-				break
-			}
+		if _, err := io.Copy(aplayIn, piperOut); err != nil {
+			fmt.Printf("⚠️ [TTS] pipe piper→aplay : %v\n", err)
 		}
 	}()
 
@@ -77,6 +63,7 @@ func Init(piperBin, piperModel, alsaDevice string) error {
 	return nil
 }
 
+// Bip joue un bip sonore court
 func Bip() {
 	if !started {
 		return
@@ -87,10 +74,11 @@ func Bip() {
 	const sampleRate = 22050
 	samples := int(math.Round(float64(sampleRate) * 0.15))
 	buf := make([]byte, samples*2)
+	fadeLen := samples / 10
+
 	for i := 0; i < samples; i++ {
 		t := float64(i) / sampleRate
 		env := 1.0
-		fadeLen := samples / 10
 		if i < fadeLen {
 			env = float64(i) / float64(fadeLen)
 		} else if i > samples-fadeLen {
@@ -100,18 +88,15 @@ func Bip() {
 		buf[i*2] = byte(val)
 		buf[i*2+1] = byte(val >> 8)
 	}
-	_, errBuf := aplayInG.Write(buf)
-	if errBuf != nil {
-		return
-	}
 
-	silence := make([]byte, 22050*2) // 1 seconde de silence
-	_, errSilence := aplayInG.Write(silence)
-	if errSilence != nil {
+	if _, err := aplayIn.Write(buf); err != nil {
 		return
 	}
+	silence := make([]byte, sampleRate*2)
+	_, _ = aplayIn.Write(silence)
 }
 
+// Parler envoie le texte à Piper via stdin
 func Parler(texte string) {
 	if !started {
 		fmt.Println("TTS non initialise")
@@ -120,17 +105,7 @@ func Parler(texte string) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	f, err := os.OpenFile(fifoPath, os.O_WRONLY, os.ModeNamedPipe)
-	if err != nil {
-		fmt.Printf("Erreur ouverture FIFO : %v\n", err)
-		return
+	if _, err := fmt.Fprintln(piperIn, texte); err != nil {
+		fmt.Printf("⚠️ [TTS] erreur écriture piper : %v\n", err)
 	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			fmt.Printf("Erreur fermeture FIFO : %v\n", err)
-		}
-	}(f)
-
-	_, _ = fmt.Fprintln(f, texte)
 }
