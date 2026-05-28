@@ -2,6 +2,7 @@ package ha
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"sort"
 	"strings"
@@ -157,12 +158,14 @@ func (b *serviceBase) appeler(entityID, action string, params map[string]interfa
 	// Utiliser WebSocket si disponible (plus rapide)
 	if b.client.ws != nil {
 		if err := b.client.ws.CallService(b.domaine, action, target, params); err != nil {
-			return "", err
+			log.Printf("⚠️ [WS] CallService échoué, fallback HTTP : %v", err)
+			// Fallback HTTP
+			goto httpFallback
 		}
-		return fmt.Sprintf("✅ [WS] [%s] %s → %s", b.domaine, entityID, action), nil
+		return fmt.Sprintf("✅ [%s] %s → %s", b.domaine, entityID, action), nil
 	}
 
-	// Fallback HTTP
+httpFallback:
 	if entityID != "" {
 		params["entity_id"] = entityID
 	}

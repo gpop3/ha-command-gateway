@@ -44,16 +44,18 @@ type wsEventData struct {
 
 // wsClient gère la connexion WebSocket vers HA avec cache d'états
 type wsClient struct {
-	conn      *websocket.Conn
-	mu        sync.Mutex
-	counter   atomic.Int32
-	pending   map[int]chan wsMessage
-	pendingMu sync.Mutex
-	url       string
-	token     string
-	ready     chan struct{}
-	closed    bool
-	timeout   time.Duration
+	conn         *websocket.Conn
+	mu           sync.Mutex
+	counter      atomic.Int32
+	pending      map[int]chan wsMessage
+	pendingMu    sync.Mutex
+	url          string
+	token        string
+	readyMu      sync.RWMutex
+	ready        chan struct{} // fermé quand auth + cache prêts
+	closed       bool
+	timeout      time.Duration
+	invalidCache atomic.Bool
 
 	// Cache d'états mis à jour en temps réel
 	stateCache   map[string]*EtatComplet
@@ -97,7 +99,6 @@ func (c *wsClient) connect() error {
 		return fmt.Errorf("websocket dial : %w", err)
 	}
 	c.conn = conn
-	c.ready = make(chan struct{})
 
 	go c.readLoop()
 	return nil
@@ -109,6 +110,7 @@ func (c *wsClient) readLoop() {
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if !c.closed {
+				c.invalidCache.Store(false)
 				log.Printf("⚠️ [WS] connexion perdue : %v — reconnexion...", err)
 				go c.reconnect()
 			}
@@ -126,10 +128,15 @@ func (c *wsClient) readLoop() {
 			c.authenticate()
 		case "auth_ok":
 			log.Printf("✅ [WS] authentifié — chargement des états...")
-			// Charger les états directement sans passer par send()
+			// Réinitialiser le canal ready pour la reconnexion
+			c.readyMu.Lock()
+			c.ready = make(chan struct{})
+			c.readyMu.Unlock()
 			go c.chargerEtatsInitiaux()
 		case "auth_invalid":
-			log.Printf("❌ [WS] authentification échouée")
+			log.Printf("❌ [WS] authentification échouée — token invalide")
+			c.closed = true
+			return
 		case "result":
 			c.pendingMu.Lock()
 			ch, ok := c.pending[msg.ID]
@@ -152,7 +159,7 @@ func (c *wsClient) readLoop() {
 	}
 }
 
-// chargerEtatsInitiaux envoie get_states directement (sans send()) pour éviter le deadlock
+// chargerEtatsInitiaux envoie get_states directement sans passer par send()
 func (c *wsClient) chargerEtatsInitiaux() {
 	// 1. Envoyer get_states directement sur le socket
 	id := int(c.counter.Add(1))
@@ -168,11 +175,12 @@ func (c *wsClient) chargerEtatsInitiaux() {
 
 	if err != nil {
 		log.Printf("⚠️ [WS] get_states envoi : %v", err)
-		close(c.ready)
+		c.invalidCache.Store(true)
+		c.closeReady()
 		return
 	}
 
-	// 2. Attendre la réponse avec un timeout généreux
+	// 2. Attendre la réponse
 	select {
 	case resp := <-ch:
 		var etats []EtatComplet
@@ -187,7 +195,7 @@ func (c *wsClient) chargerEtatsInitiaux() {
 			log.Printf("⚠️ [WS] unmarshal états : %v", err)
 		}
 	case <-time.After(c.timeout * time.Second):
-		log.Printf("⚠️ [WS] timeout get_states — cache vide")
+		log.Printf("⚠️ [WS] timeout get_states — cache vide, fallback HTTP")
 	}
 
 	// 3. S'abonner aux changements d'état
@@ -205,12 +213,29 @@ func (c *wsClient) chargerEtatsInitiaux() {
 		log.Printf("✅ [WS] abonné aux changements d'état")
 	}
 
-	// 4. Cache prêt — débloquer les appels en attente
-	close(c.ready)
+	// 4. Débloquer les appels en attente
+	c.closeReady()
+}
+
+// closeReady ferme le canal ready de façon sécurisée
+func (c *wsClient) closeReady() {
+	c.readyMu.RLock()
+	ch := c.ready
+	c.readyMu.RUnlock()
+
+	select {
+	case <-ch:
+		// Déjà fermé
+	default:
+		close(ch)
+	}
 }
 
 // GetState retourne l'état d'une entité depuis le cache
 func (c *wsClient) GetState(entityID string) (*EtatComplet, bool) {
+	if !c.invalidCache.Load() {
+		return nil, false
+	}
 	c.stateCacheMu.RLock()
 	defer c.stateCacheMu.RUnlock()
 	etat, ok := c.stateCache[entityID]
@@ -226,6 +251,20 @@ func (c *wsClient) GetAllStates() []*EtatComplet {
 		etats = append(etats, e)
 	}
 	return etats
+}
+
+// WaitReady attend que le cache soit prêt
+func (c *wsClient) WaitReady(timeout time.Duration) bool {
+	c.readyMu.RLock()
+	ch := c.ready
+	c.readyMu.RUnlock()
+
+	select {
+	case <-ch:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 func (c *wsClient) authenticate() {
@@ -247,7 +286,6 @@ func (c *wsClient) reconnect() {
 			log.Printf("⚠️ [WS] reconnexion échouée : %v", err)
 			continue
 		}
-		go c.chargerEtatsInitiaux()
 		log.Printf("✅ [WS] reconnecté")
 		return
 	}
@@ -255,26 +293,29 @@ func (c *wsClient) reconnect() {
 
 // send envoie un message et attend la réponse
 func (c *wsClient) send(msg wsMessage) (wsMessage, error) {
+	c.readyMu.RLock()
+	ch := c.ready
+	c.readyMu.RUnlock()
+
 	select {
-	case <-c.ready:
-	case <-time.After(c.timeout * time.Second):
+	case <-ch:
+	case <-time.After(15 * time.Second):
 		return wsMessage{}, fmt.Errorf("timeout connexion WS")
 	}
 
 	id := int(c.counter.Add(1))
 	msg.ID = id
 
-	ch := chanPool.Get().(chan wsMessage)
+	respCh := chanPool.Get().(chan wsMessage)
 	defer func() {
-		// Vider le canal avant de le remettre dans le pool
-		for len(ch) > 0 {
-			<-ch
+		for len(respCh) > 0 {
+			<-respCh
 		}
-		chanPool.Put(ch)
+		chanPool.Put(respCh)
 	}()
 
 	c.pendingMu.Lock()
-	c.pending[id] = ch
+	c.pending[id] = respCh
 	c.pendingMu.Unlock()
 
 	c.mu.Lock()
@@ -289,7 +330,7 @@ func (c *wsClient) send(msg wsMessage) (wsMessage, error) {
 	}
 
 	select {
-	case resp := <-ch:
+	case resp := <-respCh:
 		if !resp.Success && resp.Error != nil {
 			return wsMessage{}, fmt.Errorf("WS %s : %s", resp.Error.Code, resp.Error.Message)
 		}

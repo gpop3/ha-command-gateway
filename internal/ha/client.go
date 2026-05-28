@@ -69,13 +69,11 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 }
 
 // AttendreWS attente du WS
-func (c *Client) AttendreWS() {
+func (c *Client) AttendreWS(timeout time.Duration) {
 	if c.ws == nil {
 		return
 	}
-	select {
-	case <-c.ws.ready:
-	case <-time.After(c.timeout * time.Second):
+	if !c.ws.WaitReady(timeout) {
 		log.Printf("⚠️ [WS] timeout attente cache — fallback HTTP")
 	}
 }
