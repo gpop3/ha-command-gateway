@@ -162,7 +162,7 @@ func (b *serviceBase) appeler(entityID, action string, params map[string]interfa
 			// Fallback HTTP
 			goto httpFallback
 		}
-		return fmt.Sprintf("✅ [%s] %s → %s", b.domaine, entityID, action), nil
+		return fmt.Sprintf("✅ [WS] [%s] %s → %s", b.domaine, entityID, action), nil
 	}
 
 httpFallback:
