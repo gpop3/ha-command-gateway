@@ -61,6 +61,9 @@ type Config struct {
 	// API HTTP
 	APIPort int
 	APIKey  string
+
+	// Natural Language Processing (NLP)
+	ActivePreselection bool
 }
 
 // Load charge la config depuis les variables d'environnement, avec des valeurs par défaut
@@ -125,6 +128,9 @@ func Load() *Config {
 		// HTTP Client
 		APIPort: getEnvInt("API_PORT", 8080),
 		APIKey:  getEnv("API_KEY", ""),
+
+		// NLP
+		ActivePreselection: getEnv("ACTIVE_PRESELECTION", "true") == "true",
 	}
 
 	// Construction automatique du whisperURL si non fourni

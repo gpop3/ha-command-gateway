@@ -6,6 +6,8 @@ import (
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,21 +17,22 @@ import (
 
 // Analyseur traite les commandes textuelles et les exécute via HA
 type Analyseur struct {
-	haClient  *ha.Client
-	catalogue []ha.Appareil
+	haClient                *ha.Client
+	catalogue               []ha.Appareil
+	dernierRafraichissement time.Time
+	catalogueIndex          map[string][]ha.Appareil
+	activePreselection      bool
 }
 
-var dernierRafraichissement time.Time
-
 // New crée un analyseur avec le client HA fourni
-func New(haClient *ha.Client) *Analyseur {
-	return &Analyseur{haClient: haClient}
+func New(haClient *ha.Client, activePreselection bool) *Analyseur {
+	return &Analyseur{haClient: haClient, activePreselection: activePreselection}
 }
 
 // RafraichirCatalogue met à jour la liste des entités depuis HA
 func (a *Analyseur) RafraichirCatalogue() error {
 	// Rafraichir seulement si vide ou > 30 mins
-	if len(a.catalogue) > 0 && time.Since(dernierRafraichissement) < 30*time.Minute {
+	if len(a.catalogue) > 0 && time.Since(a.dernierRafraichissement) < 30*time.Minute {
 		return nil
 	}
 
@@ -64,7 +67,18 @@ func (a *Analyseur) RafraichirCatalogue() error {
 			Domain:            "agenda",
 		},
 	)
-	dernierRafraichissement = time.Now()
+	a.dernierRafraichissement = time.Now()
+
+	// Trier par domaine pour grouper les entités et accélérer le matching
+	sort.Slice(a.catalogue, func(i, j int) bool {
+		return a.catalogue[i].Domain < a.catalogue[j].Domain
+	})
+
+	// Indexer par domaine
+	a.catalogueIndex = make(map[string][]ha.Appareil)
+	for _, app := range a.catalogue {
+		a.catalogueIndex[app.Domain] = append(a.catalogueIndex[app.Domain], app)
+	}
 
 	if svc, ok := ha.Lookup("agenda"); ok {
 		if agenda, ok := svc.(*ha.ServiceAgenda); ok {
@@ -74,8 +88,8 @@ func (a *Analyseur) RafraichirCatalogue() error {
 
 	if svc, ok := ha.Lookup("media_player"); ok {
 		if mp, ok := svc.(*ha.ServiceMediaPlayer); ok {
-			mp.SetTrouverEntite(func(texte string, estAction bool) (ha.Appareil, int) {
-				return a.TrouverMeilleurMatch(texte, estAction)
+			mp.SetTrouverEntite(func(texte string, estAction bool, domaines []string) (ha.Appareil, int) {
+				return a.TrouverMeilleurMatch(texte, estAction, domaines)
 			})
 			mp.ChargerSourcesSpotify()
 		}
@@ -196,11 +210,16 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool) {
 
 	verbe, estAction := detecterVerbe(nettoye)
 
+	domainesCandidats := []string{}
+	if estAction && a.activePreselection {
+		domainesCandidats = detecterDomaines(nettoye)
+	}
+
 	if err := a.RafraichirCatalogue(); err != nil {
 		return "Erreur : Impossible de joindre Home Assistant.", false
 	}
 
-	meilleurMatch, meilleurScore := a.TrouverMeilleurMatch(nettoye, estAction)
+	meilleurMatch, meilleurScore := a.TrouverMeilleurMatch(nettoye, estAction, domainesCandidats)
 	if meilleurScore < 30 {
 		return "Je n'ai pas compris", false
 	}
@@ -239,6 +258,32 @@ func detecterVerbe(texte string) (verbe string, estAction bool) {
 		}
 	}
 	return "", false
+}
+
+// ---- Détection des domaines en fonction des verbes ----
+
+// detecterDomaines parcourt tous les services enregistrés pour trouver les domaines
+func detecterDomaines(texte string) (domaines []string) {
+	var domainesKeys []string
+	mots := strings.Fields(texte)
+
+	for _, mot := range mots {
+		for _, domaine := range ha.ListDomaines() {
+			if slices.Contains(domaines, domaine) {
+				continue
+			}
+
+			svc, ok := ha.Lookup(domaine)
+			if !ok {
+				continue
+			}
+			if _, ok := svc.Verbe(mot); ok {
+				domainesKeys = append(domainesKeys, domaine)
+			}
+		}
+	}
+
+	return domainesKeys
 }
 
 // ---- Extraction des paramètres par service ----
@@ -310,7 +355,7 @@ var motsParasites = []string{
 	"batterie", "battery",
 }
 
-func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool) (ha.Appareil, int) {
+func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, domainesCandidats []string) (ha.Appareil, int) {
 	motsSMS := strings.Fields(texteNettoye)
 
 	modificateurDemande := ""
@@ -324,12 +369,34 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool) (h
 	var meilleurMatch ha.Appareil
 	meilleurScore := 0
 
-	for _, app := range a.catalogue {
-		score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
-		if score > meilleurScore {
-			fmt.Printf("DEBUG: '%s' | Score: %d | Domaine: %s\n", app.FriendlyName, score, app.Domain)
-			meilleurScore = score
-			meilleurMatch = app
+	candidats := []ha.Appareil{}
+	for _, domaine := range domainesCandidats {
+		fmt.Printf("DEBUG: 'Selection du domaine %s' pour la recherche\n", domaine)
+
+		if entites, ok := a.catalogueIndex[domaine]; ok {
+			candidats = append(candidats, entites...)
+		}
+	}
+
+	if len(candidats) == 0 {
+		for _, app := range a.catalogue {
+			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
+			if score > meilleurScore {
+				fmt.Printf("DEBUG: Présélection '%s' | Score: %d | Domaine: %s\n", app.FriendlyName, score, app.Domain)
+				meilleurScore = score
+				meilleurMatch = app
+			}
+		}
+	}
+
+	if meilleurScore < 50 {
+		for _, app := range a.catalogue {
+			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
+			if score > meilleurScore {
+				fmt.Printf("DEBUG: '%s' | Score: %d | Domaine: %s\n", app.FriendlyName, score, app.Domain)
+				meilleurScore = score
+				meilleurMatch = app
+			}
 		}
 	}
 

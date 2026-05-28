@@ -34,7 +34,7 @@ func main() {
 	i18n.SetLocale(cfg.Lang)
 
 	haClient := ha.NewClient(cfg.HAUrl, cfg.HAToken, cfg.HAPieces, cfg)
-	analyseur := nlp.New(haClient)
+	analyseur := nlp.New(haClient, cfg.ActivePreselection)
 
 	if err := speech.Init(cfg.PiperBin, cfg.PiperModel, cfg.AlsaDevice); err != nil {
 		log.Fatalf("Erreur init TTS : %v", err)
