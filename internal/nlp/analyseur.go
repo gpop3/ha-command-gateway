@@ -238,7 +238,8 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (string, bool, bool, *ha.Ap
 	if estAction {
 		return a.executerAction(meilleurMatch, verbe, params), true, true, &meilleurMatch
 	}
-	return a.lireEtat(meilleurMatch, nettoye), true, false, &meilleurMatch
+	etat, _ := a.lireEtat(meilleurMatch, nettoye)
+	return etat, true, false, &meilleurMatch
 }
 
 // ---- Détection du verbe ----
@@ -517,26 +518,26 @@ func (a *Analyseur) executerAction(app ha.Appareil, verbe string, params map[str
 
 // ---- Lecture d'état ----
 
-func (a *Analyseur) lireEtat(app ha.Appareil, texteNettoye string) string {
+func (a *Analyseur) lireEtat(app ha.Appareil, texteNettoye string) (string, string) {
 	dateCible, demandeHistorique := text.DetecterHeure(texteNettoye)
 
 	if demandeHistorique {
 		etat, err := a.haClient.RecupererHistorique(app.EntityID, dateCible)
 		if err != nil {
-			return fmt.Sprintf("⚠️ Erreur historique pour [%s] à %s.", app.FriendlyName, dateCible.Format("15h04"))
+			return fmt.Sprintf("⚠️ Erreur historique pour [%s] à %s.", app.FriendlyName, dateCible.Format("15h04")), i18n.T("erreur.lecture.parler")
 		}
 		if app.Domain == "climate" {
-			return ha.FormaterEtatClimate(app.FriendlyName, etat)
+			return ha.FormaterEtatClimate(app.FriendlyName, etat), ha.FormaterEtatClimate(app.FriendlyName, etat)
 		}
-		return fmt.Sprintf("⏳ [%s] À %s, l'état était : %s.", app.FriendlyName, dateCible.Format("15h04"), etat.State)
+		return fmt.Sprintf("⏳ [%s] À %s, l'état était : %s.", app.FriendlyName, dateCible.Format("15h04"), etat.State), etat.State
 	}
 
 	etat, err := a.haClient.RecupererEtatLive(app.EntityID)
 	if err != nil {
-		return i18n.T("erreur.lecture.live", app.FriendlyName) + fmt.Sprintf(" (%v)", err)
+		return i18n.T("erreur.lecture.live", app.FriendlyName) + fmt.Sprintf(" (%v)", err), i18n.T("erreur.lecture.parler")
 	}
 	if app.Domain == "climate" {
-		return ha.FormaterEtatClimate(app.FriendlyName, etat)
+		return ha.FormaterEtatClimate(app.FriendlyName, etat), ha.FormaterEtatClimate(app.FriendlyName, etat)
 	}
-	return fmt.Sprintf("📊 [%s] État actuel : %s.", app.FriendlyName, etat.State)
+	return fmt.Sprintf("📊 [%s] État actuel : %s.", app.FriendlyName, etat.State), etat.State
 }

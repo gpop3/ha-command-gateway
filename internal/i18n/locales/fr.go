@@ -6,15 +6,16 @@ func init() {
 	i18n.Register("fr", i18n.Locale{
 
 		// ---- Général ----
-		"erreur.ha.connexion": "Impossible de joindre Home Assistant : %v",
-		"erreur.action":       "❌ Échec de l'action sur %s : %v",
-		"erreur.domaine":      "❌ Domaine '%s' non supporté.",
-		"erreur.lecture.live": "⚠️ Erreur lecture live de [%s].",
-		"erreur.historique":   "⚠️ Erreur historique pour [%s] à %s.",
-		"pas.compris":         "Je n'ai pas compris.",
-		"traitement":          "Traitement en cours.",
-		"ok.action":           "✅ L'ordre a été exécuté sur : %s.",
-		"ok.message":          "✅ %s",
+		"erreur.ha.connexion":   "Impossible de joindre Home Assistant : %v",
+		"erreur.action":         "❌ Échec de l'action sur %s : %v",
+		"erreur.domaine":        "❌ Domaine '%s' non supporté.",
+		"erreur.lecture.live":   "⚠️ Erreur lecture live de [%s].",
+		"erreur.historique":     "⚠️ Erreur historique pour [%s] à %s.",
+		"pas.compris":           "Je n'ai pas compris.",
+		"traitement":            "Traitement en cours.",
+		"ok.action":             "✅ L'ordre a été exécuté sur : %s.",
+		"ok.message":            "✅ %s",
+		"erreur.lecture.parler": "Erreur lecture",
 
 		// ---- Voix / assistant ----
 		"assistant.pret":      "🚀 Assistant prêt (Voix + SMS + Console).",

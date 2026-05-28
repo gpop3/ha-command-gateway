@@ -3,6 +3,7 @@ package speech
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -101,9 +102,19 @@ func cheminCache(texte string) string {
 	return filepath.Join(cacheDir, hash+".pcm")
 }
 
+type PiperRequest struct {
+	Text string `json:"text"`
+}
+
 // genererPCM appelle Piper HTTP et retourne le PCM brut
 func genererPCM(texte string) ([]byte, error) {
-	resp, err := httpClient.Post(piperURL, "text/plain", strings.NewReader(texte))
+	payload := PiperRequest{Text: texte}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("erreur lors de l'envoi : %w", err)
+	}
+
+	resp, err := httpClient.Post(piperURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("piper HTTP : %w", err)
 	}
