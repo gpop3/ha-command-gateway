@@ -67,6 +67,10 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 		log.Printf("⚠️ services.yaml : %v", err)
 	}
 
+	if err := LoadPlugins("plugins/", c); err != nil {
+		log.Printf("⚠️ plugins : %v", err)
+	}
+
 	pieces = ParserPieces(piecesEnv)
 
 	return c

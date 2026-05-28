@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"plugin"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -39,5 +42,45 @@ func LoadServicesFromFile(path string, client *Client) error {
 			cfg.Domain, len(cfg.Verbs), len(cfg.Words))
 	}
 
+	return nil
+}
+
+// LoadPlugins charge les services custom depuis des so compilé
+func LoadPlugins(dir string, client *Client) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".so") {
+			continue
+		}
+
+		path := filepath.Join(dir, entry.Name())
+		p, err := plugin.Open(path)
+		if err != nil {
+			log.Printf("⚠️ [plugin] %s : %v", entry.Name(), err)
+			continue
+		}
+
+		sym, err := p.Lookup("PluginService")
+		if err != nil {
+			log.Printf("⚠️ [plugin] %s : symbole PluginService manquant", entry.Name())
+			continue
+		}
+
+		svc, ok := sym.(*Service)
+		if !ok {
+			log.Printf("⚠️ [plugin] %s : type invalide", entry.Name())
+			continue
+		}
+
+		Register(*svc)
+		log.Printf("✅ [plugin] %s chargé → domaine '%s'", entry.Name(), (*svc).Domaine())
+	}
 	return nil
 }

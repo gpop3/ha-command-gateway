@@ -22,6 +22,7 @@ func Init(piperBin, piperModel, alsaDevice string) error {
 		"-r", "22050",
 		"-f", "S16_LE",
 		"-c", "1",
+		"--buffer-size=4096",
 		"-t", "raw",
 		"-",
 	)
