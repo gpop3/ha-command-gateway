@@ -63,12 +63,9 @@ func (s *ServiceWeather) MotsReconnus() []string {
 }
 
 func (s *ServiceWeather) etatActuel(entityID string) (string, error) {
-	body, err := s.client.get("/api/states/" + entityID)
+	etat, err := s.client.RecupererEtatLive(entityID)
+
 	if err != nil {
-		return "", err
-	}
-	var etat EtatComplet
-	if err := json.Unmarshal(body, &etat); err != nil {
 		return "", err
 	}
 	condition := tradCondition(etat.State)

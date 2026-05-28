@@ -17,6 +17,7 @@ type Piece struct {
 
 // EtatComplet contient l'état et les attributs courants d'une entité
 type EtatComplet struct {
+	EntityID   string          `json:"entity_id"`
 	State      string          `json:"state"`
 	Attributes AttributsEntite `json:"attributes"`
 }

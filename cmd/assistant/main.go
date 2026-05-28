@@ -33,7 +33,9 @@ func main() {
 	cfg := config.Load()
 	i18n.SetLocale(cfg.Lang)
 
-	haClient := ha.NewClient(cfg.HAUrl, cfg.HAToken, cfg.HAPieces, cfg)
+	haClient := ha.NewClient(cfg.HAUrl, cfg.HAToken, cfg.HAPieces, time.Duration(cfg.HATimeout), cfg)
+	haClient.AttendreWS()
+
 	analyseur := nlp.New(haClient, cfg.ActivePreselection)
 
 	if err := speech.Init(cfg.PiperBin, cfg.PiperModel, cfg.AlsaDevice); err != nil {

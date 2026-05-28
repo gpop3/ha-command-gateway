@@ -7,6 +7,7 @@ import (
 	"ha-command-gateway/config"
 	"ha-command-gateway/internal/utils/conversion"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -14,19 +15,30 @@ import (
 
 // Client est le client HTTP vers Home Assistant
 type Client struct {
-	url   string
-	token string
-	http  *http.Client
+	url     string
+	token   string
+	http    *http.Client
+	ws      *wsClient
+	timeout time.Duration
 }
 
 var pieces []Piece
 
 // NewClient crée un nouveau client HA et enregistre tous les services built-in
-func NewClient(url, token string, piecesEnv string, cfg *config.Config) *Client {
+func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration, cfg *config.Config) *Client {
 	c := &Client{
-		url:   url,
-		token: token,
-		http:  &http.Client{Timeout: 30 * time.Second},
+		url:     url,
+		token:   token,
+		http:    &http.Client{Timeout: timeoutClient * time.Second},
+		timeout: timeoutClient,
+	}
+
+	ws, err := newWSClient(url, token, timeoutClient)
+	if err != nil {
+		log.Printf("⚠️ [WS] WebSocket indisponible, fallback HTTP : %v", err)
+		ws = nil
+	} else {
+		c.ws = ws
 	}
 
 	Register(NewServiceLight(c))
@@ -55,6 +67,18 @@ func NewClient(url, token string, piecesEnv string, cfg *config.Config) *Client 
 	pieces = ParserPieces(piecesEnv)
 
 	return c
+}
+
+// AttendreWS attente du WS
+func (c *Client) AttendreWS() {
+	if c.ws == nil {
+		return
+	}
+	select {
+	case <-c.ws.ready:
+	case <-time.After(c.timeout * time.Second):
+		log.Printf("⚠️ [WS] timeout attente cache — fallback HTTP")
+	}
 }
 
 // ---- Helpers HTTP ----
@@ -118,6 +142,26 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 
 // RecupererEntites retourne toutes les entités de Home Assistant
 func (c *Client) RecupererEntites() ([]Appareil, error) {
+	if c.ws != nil {
+		etats := c.ws.GetAllStates()
+		if len(etats) > 0 {
+			var appareils []Appareil
+			for _, e := range etats {
+				if e.Attributes.FriendlyName == "" {
+					continue
+				}
+				appareils = append(appareils, Appareil{
+					EntityID:          e.EntityID,
+					FriendlyName:      normaliserNom(e.Attributes.FriendlyName),
+					FriendlyNameExact: e.Attributes.FriendlyName,
+					State:             e.State,
+					Domain:            strings.Split(e.EntityID, ".")[0],
+				})
+			}
+			return appareils, nil
+		}
+	}
+
 	body, err := c.get("/api/states")
 	if err != nil {
 		return nil, err
@@ -146,6 +190,12 @@ func (c *Client) RecupererEntites() ([]Appareil, error) {
 
 // RecupererEtatLive retourne l'état temps réel d'une entité
 func (c *Client) RecupererEtatLive(entityID string) (*EtatComplet, error) {
+	if c.ws != nil {
+		if etat, ok := c.ws.GetState(entityID); ok {
+			return etat, nil
+		}
+	}
+
 	body, err := c.get("/api/states/" + entityID)
 	if err != nil {
 		return nil, err
@@ -160,6 +210,7 @@ func (c *Client) RecupererEtatLive(entityID string) (*EtatComplet, error) {
 
 // RecupererHistorique retourne l'état d'une entité à un instant passé
 func (c *Client) RecupererHistorique(entityID string, dateCible time.Time) (*EtatComplet, error) {
+	// pas de websocket pour ce service
 	dateUTC := dateCible.UTC().Format("2006-01-02T15:04:05Z")
 	path := fmt.Sprintf("/api/history/period/%s?filter_entity_id=%s&end_time=%s",
 		dateUTC, entityID, dateUTC)
@@ -180,26 +231,6 @@ func (c *Client) RecupererHistorique(entityID string, dateCible time.Time) (*Eta
 
 	etat := historique[0][0]
 	return &etat, nil
-}
-
-// EnvoyerIntent appelle l'API intent de HA (HassTurnOn, HassTurnOff, etc.)
-func (c *Client) EnvoyerIntent(intentName string, data map[string]interface{}) (string, error) {
-	payload := map[string]interface{}{
-		"name": intentName,
-		"data": data,
-	}
-
-	body, err := c.post("/api/intent/handle", payload)
-	if err != nil {
-		return "", err
-	}
-
-	var rep ReponseIntent
-	err = json.Unmarshal(body, &rep)
-	if err != nil {
-		return "", err
-	}
-	return rep.Speech.Plain.Speech, nil
 }
 
 // GetPieces recuperation des pieces

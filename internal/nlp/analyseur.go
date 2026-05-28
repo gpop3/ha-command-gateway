@@ -378,8 +378,8 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, do
 		}
 	}
 
-	if len(candidats) == 0 {
-		for _, app := range a.catalogue {
+	if len(candidats) > 0 {
+		for _, app := range candidats {
 			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
 			if score > meilleurScore {
 				fmt.Printf("DEBUG: Présélection '%s' | Score: %d | Domaine: %s\n", app.FriendlyName, score, app.Domain)

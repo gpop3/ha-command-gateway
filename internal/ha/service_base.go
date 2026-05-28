@@ -147,6 +147,22 @@ func (b *serviceBase) appeler(entityID, action string, params map[string]interfa
 	if params == nil {
 		params = map[string]interface{}{}
 	}
+
+	// Construire target et data séparément pour WebSocket
+	target := map[string]interface{}{}
+	if entityID != "" {
+		target["entity_id"] = entityID
+	}
+
+	// Utiliser WebSocket si disponible (plus rapide)
+	if b.client.ws != nil {
+		if err := b.client.ws.CallService(b.domaine, action, target, params); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("✅ [WS] [%s] %s → %s", b.domaine, entityID, action), nil
+	}
+
+	// Fallback HTTP
 	if entityID != "" {
 		params["entity_id"] = entityID
 	}

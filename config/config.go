@@ -14,9 +14,11 @@ type Config struct {
 	Lang string
 
 	// Home Assistant
-	HAUrl    string
-	HAToken  string
-	HAPieces string
+	HAUrl       string
+	HAToken     string
+	HAPieces    string
+	HAWebsocket bool
+	HATimeout   int
 
 	// Raspberry Pi / Whisper
 	RaspberryPiIP string
@@ -78,9 +80,11 @@ func Load() *Config {
 		Lang: getEnv("LANG", "fr"),
 
 		// Home Assistant
-		HAUrl:    getEnv("HA_URL", "http://localhost:8123"),
-		HAToken:  getEnv("HA_TOKEN", ""),
-		HAPieces: getEnv("MES_PIECES", ""),
+		HAUrl:       getEnv("HA_URL", "http://localhost:8123"),
+		HAToken:     getEnv("HA_TOKEN", ""),
+		HAPieces:    getEnv("MES_PIECES", ""),
+		HAWebsocket: getEnv("HA_WEBSOCKET", "true") == "true",
+		HATimeout:   getEnvInt("HA_TIMEOUT", 5),
 
 		// Whisper / Raspberry Pi
 		RaspberryPiIP: getEnv("RASPBERRY_PI_IP", "localhost"),
