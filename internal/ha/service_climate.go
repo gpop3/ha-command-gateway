@@ -1,8 +1,9 @@
 package ha
 
 import (
-	"fmt"
+	"ha-command-gateway/pkg/types"
 	"strings"
+	"time"
 
 	"ha-command-gateway/internal/i18n"
 )
@@ -98,7 +99,7 @@ func (s *ServiceClimate) MotsReconnus() []string {
 	)
 }
 
-func FormaterEtatClimate(nom string, etat *EtatComplet) string {
+func (s *ServiceClimate) EtatEnMessage(app Appareil, etat *EtatComplet, dateCible time.Time) types.Message {
 	var action string
 	switch etat.Attributes.HvacAction {
 	case "heating":
@@ -108,20 +109,15 @@ func FormaterEtatClimate(nom string, etat *EtatComplet) string {
 	default:
 		action = i18n.T("climate.repos")
 	}
-	return fmt.Sprintf(i18n.T("climate.format"),
-		nom, etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State)
-}
 
-func FormaterEtatClimateVoix(nom string, etat *EtatComplet) string {
-	var action string
-	switch etat.Attributes.HvacAction {
-	case "heating":
-		action = i18n.T("climate.chauffe")
-	case "cooling":
-		action = i18n.T("climate.refroid")
-	default:
-		action = i18n.T("climate.repos")
+	return types.Message{
+		SMS: types.MessageDetails{
+			Texte:  i18n.T("climate.format"),
+			Params: []interface{}{app.FriendlyNameExact, etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State},
+		},
+		Voix: types.MessageDetails{
+			Texte:  i18n.T("assistant.retour.climate"),
+			Params: []interface{}{etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State},
+		},
 	}
-	return fmt.Sprintf(i18n.T("assistant.retour.climate"),
-		etat.Attributes.CurrentTemperature, etat.Attributes.Temperature, action, etat.State)
 }

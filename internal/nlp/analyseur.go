@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
+	"ha-command-gateway/pkg/types"
 	"regexp"
 	"slices"
 	"sort"
@@ -123,7 +124,7 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 	}
 
-	for _, m := range []string{"assistant", "stop", "pourcentage"} {
+	for _, m := range []string{"assistant", "stop", "pourcentage", "heure"} {
 		ajouter(m)
 	}
 
@@ -204,14 +205,8 @@ func (a *Analyseur) GenererSystemPrompt() string {
 
 // ---- Point d'entrée principal ----
 
-type EtatType struct {
-	TextSms   string
-	TexteVoix string
-	Date      *string
-}
-
 // AnalyserEtExecuter traite une commande textuelle et retourne la réponse
-func (a *Analyseur) AnalyserEtExecuter(texte string) (*EtatType, string, bool, bool, *ha.Appareil) {
+func (a *Analyseur) AnalyserEtExecuter(texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
 	nettoye := strings.ToLower(texte)
 
 	verbe, estAction := detecterVerbe(nettoye)
@@ -231,8 +226,10 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*EtatType, string, bool, b
 	}
 
 	params := extraireParamsParService(nettoye, meilleurMatch.Domain)
-	if _, aUnPourcentage := params["pourcentage"]; aUnPourcentage {
-		estAction = true
+	if params != nil {
+		if _, aUnPourcentage := params["pourcentage"]; aUnPourcentage {
+			estAction = true
+		}
 	}
 
 	fmt.Printf("DEBUG estAction=%v domaine=%s\n", estAction, meilleurMatch.Domain)
@@ -242,12 +239,17 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*EtatType, string, bool, b
 		estActionParDefaut = true
 	}
 
-	if estAction || estActionParDefaut {
-		etat := a.executerAction(meilleurMatch, verbe, params)
-
-		return &EtatType{etat, etat, nil}, verbe, true, estAction, &meilleurMatch
+	svc, ok := ha.Lookup(meilleurMatch.Domain)
+	if !ok {
+		return nil, verbe, true, estAction, &meilleurMatch
 	}
-	etat := a.lireEtat(meilleurMatch, nettoye)
+
+	if estAction || estActionParDefaut {
+		etat := a.executerActionMessage(svc, meilleurMatch, verbe, params)
+
+		return &etat, verbe, true, estAction, &meilleurMatch
+	}
+	etat := a.lireEtatMessage(svc, meilleurMatch, nettoye)
 	return &etat, verbe, true, false, &meilleurMatch
 }
 
@@ -299,62 +301,11 @@ func detecterDomaines(texte string) (domaines []string) {
 // ---- Extraction des paramètres par service ----
 
 // extraireParamsParService délègue l'extraction au service du domaine concerné.
-// Si le domaine n'est pas enregistré, utilise une extraction universelle de fallback.
 func extraireParamsParService(texte, domaine string) map[string]interface{} {
 	if svc, ok := ha.Lookup(domaine); ok {
 		return svc.ExtraireParams(texte)
 	}
-	// Fallback : extraction universelle via un serviceBase anonyme
-	return extraireParamsUniversels(texte)
-}
-
-// extraireParamsUniversels est le fallback quand le domaine est inconnu.
-// Même logique que serviceBase.ExtraireParams.
-func extraireParamsUniversels(texte string) map[string]interface{} {
-	params := map[string]interface{}{}
-
-	if re := regexp.MustCompile(`(\d{1,3})\s*%`); re.MatchString(texte) {
-		m := re.FindStringSubmatch(texte)
-		var pct int
-		_, err := fmt.Sscanf(m[1], "%d", &pct)
-		if err != nil {
-			return nil
-		}
-		params["pourcentage"] = pct
-		return params
-	}
-
-	mots := strings.Fields(texte)
-	for i, mot := range mots {
-		if i+2 < len(mots) && mots[i+1] == "pour" && mots[i+2] == "cent" {
-			if v, ok := conversion.LettreVersEntier(mot); ok {
-				params["pourcentage"] = v
-				return params
-			}
-		}
-	}
-
-	if re := regexp.MustCompile(`(\d+(?:[.,]\d+)?)\s*(?:degrés?|°)`); re.MatchString(texte) {
-		m := re.FindStringSubmatch(texte)
-		var temp float64
-		_, err := fmt.Sscanf(strings.ReplaceAll(m[1], ",", "."), "%f", &temp)
-		if err != nil {
-			return nil
-		}
-		params["temperature"] = temp
-		return params
-	}
-
-	for i, mot := range mots {
-		if (mot == "degrés" || mot == "degré") && i > 0 {
-			if v, ok := conversion.LettreVersEntier(mots[i-1]); ok {
-				params["temperature"] = float64(v)
-				return params
-			}
-		}
-	}
-
-	return params
+	return nil
 }
 
 // ---- Matching ----
@@ -509,69 +460,63 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 	return score
 }
 
+// ---- Helpers exécution & lecture d'état ----
+
 // ---- Exécution ----
 
-// executerAction délègue entièrement au service du domaine concerné.
-func (a *Analyseur) executerAction(app ha.Appareil, verbe string, params map[string]interface{}) string {
-	svc, ok := ha.Lookup(app.Domain)
-	if !ok {
-		return fmt.Sprintf("❌ Domaine '%s' non supporté.", app.Domain)
+// executerActionMessage Execute la commande sur l'entité et récupère le message
+func (a *Analyseur) executerActionMessage(svc ha.Service, app ha.Appareil, verbe string, params map[string]interface{}) types.Message {
+	reponse, err := svc.ExecuterCommande(app, verbe, params)
+
+	if err == nil {
+		return types.Message{
+			SMS: types.MessageDetails{
+				Texte:  i18n.T("erreur.action.parler"),
+				Params: []interface{}{},
+			},
+			Voix: types.MessageDetails{
+				Texte:  i18n.T("erreur.action.parler"),
+				Params: []interface{}{},
+			},
+		}
 	}
 
-	reponse, err := svc.ExecuterCommande(app, verbe, params)
-	if err != nil {
-		return fmt.Sprintf("❌ Échec de l'action sur %s : %v", app.FriendlyName, err)
+	return types.Message{
+		SMS: types.MessageDetails{
+			Texte:  reponse,
+			Params: []interface{}{},
+		},
+		Voix: types.MessageDetails{
+			Texte:  reponse,
+			Params: []interface{}{},
+		},
 	}
-	return reponse
 }
 
 // ---- Lecture d'état ----
 
-func (a *Analyseur) lireEtat(app ha.Appareil, texteNettoye string) EtatType {
+// lireEtatMessage Lit l'état de l'entité et récupère le message
+func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoye string) types.Message {
 	dateCible, demandeHistorique := text.DetecterHeure(texteNettoye)
 
+	var dateParam time.Time
 	if demandeHistorique {
-		etat, err := a.haClient.RecupererHistorique(app.EntityID, dateCible)
-		if err != nil {
-			return EtatType{
-				fmt.Sprintf("⚠️ Erreur historique pour [%s] à %s.", app.FriendlyName, dateCible.Format("15h04")),
-				i18n.T("erreur.lecture.parler"),
-				&[]string{dateCible.Format("15h04")}[0],
-			}
-		}
-		if app.Domain == "climate" {
-			return EtatType{
-				ha.FormaterEtatClimate(app.FriendlyName, etat),
-				ha.FormaterEtatClimateVoix(app.FriendlyName, etat),
-				&[]string{dateCible.Format("15h04")}[0],
-			}
-		}
-		return EtatType{
-			fmt.Sprintf("⏳ [%s] À %s, l'état était : %s.", app.FriendlyName, dateCible.Format("15h04"), etat.State),
-			etat.State,
-			&[]string{dateCible.Format("15h04")}[0],
-		}
+		dateParam = dateCible
 	}
 
-	etat, err := a.haClient.RecupererEtatLive(app.EntityID)
+	etat, err := svc.RecupererEtat(app, dateParam)
 	if err != nil {
-		return EtatType{
-			i18n.T("erreur.lecture.live", app.FriendlyName) + fmt.Sprintf(" (%v)", err),
-			ha.FormaterEtatClimateVoix(app.FriendlyName, etat),
-			nil,
-		}
-	}
-	if app.Domain == "climate" {
-		return EtatType{
-			ha.FormaterEtatClimate(app.FriendlyName, etat),
-			ha.FormaterEtatClimateVoix(app.FriendlyName, etat),
-			nil,
+		return types.Message{
+			SMS: types.MessageDetails{
+				Texte:  i18n.T("erreur.lecture.parler"),
+				Params: []interface{}{},
+			},
+			Voix: types.MessageDetails{
+				Texte:  i18n.T("erreur.lecture.parler"),
+				Params: []interface{}{},
+			},
 		}
 	}
 
-	return EtatType{
-		fmt.Sprintf("📊 [%s] État actuel : %s.", app.FriendlyName, etat.State),
-		etat.State,
-		nil,
-	}
+	return svc.EtatEnMessage(app, etat, dateParam)
 }

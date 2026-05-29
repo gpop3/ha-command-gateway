@@ -16,7 +16,7 @@ func init() {
 		"ok.message":            "✅ %s",
 		"erreur.lecture.parler": "Erreur lecture",
 
-		// ---- Voix / assistant ----
+		// ---- assistant ----
 		"assistant.pret":      "🚀 Assistant prêt (Voix + SMS + Console).",
 		"assistant.catalogue": "🚀 Catalogue HA chargé.",
 		"assistant.ecoute":    "Je vous écoute.",
@@ -31,6 +31,11 @@ func init() {
 		"assistant.retour.erreur":      "Une erreur est survenue",
 		"assistant.retour.pas.compris": "Je n'ai pas compris.",
 		"assistant.retour.climate":     "Température actuelle : %.1f degrés. Consigne : %.1f degrés. Le statut est %s avec un mode %s.",
+		"erreur.action.parler":         "Erreur lors de l'action sur l'entité",
+
+		// --- SMS ----,
+		"message.retour.etat":       "[%s] État actuel : %s.",
+		"message.retour.etat.heure": "[%s] À %s, l'état était : %s.",
 
 		// ---- Audio / transcription ----
 		"audio.micro":          "🎤 Micro activé en continu.",

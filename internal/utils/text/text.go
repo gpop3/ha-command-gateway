@@ -1,8 +1,8 @@
 package text
 
 import (
-	"fmt"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -39,23 +39,24 @@ func DistanceLevenshtein(s1, s2 string) int {
 }
 
 func DetecterHeure(texte string) (time.Time, bool) {
-	re := regexp.MustCompile(`(\d{1,2})h(\d{2})?`)
+	re := regexp.MustCompile(`(\d{1,2})\s*(?:heures?|h)\s*(\d{2})?`)
+
 	m := re.FindStringSubmatch(texte)
 	if len(m) < 2 {
 		return time.Time{}, false
 	}
 
-	minuteStr := "00"
-	if len(m) > 2 && m[2] != "" {
-		minuteStr = m[2]
+	h, err := strconv.Atoi(m[1])
+	if err != nil {
+		return time.Time{}, false
 	}
 
-	var h, min int
-	if _, err := fmt.Sscanf(m[1], "%d", &h); err != nil {
-		return time.Time{}, false
-	}
-	if _, err := fmt.Sscanf(minuteStr, "%d", &min); err != nil {
-		return time.Time{}, false
+	min := 0
+	if len(m) > 2 && m[2] != "" {
+		min, err = strconv.Atoi(m[2])
+		if err != nil {
+			return time.Time{}, false
+		}
 	}
 
 	if h < 0 || h >= 24 || min < 0 || min >= 60 {

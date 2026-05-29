@@ -2,10 +2,13 @@ package ha
 
 import (
 	"fmt"
+	"ha-command-gateway/internal/i18n"
+	"ha-command-gateway/pkg/types"
 	"log"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"ha-command-gateway/internal/utils/conversion"
 )
@@ -178,4 +181,37 @@ httpFallback:
 		return "", err
 	}
 	return fmt.Sprintf("✅ [%s] %s → %s", b.domaine, entityID, action), nil
+}
+
+func (b *serviceBase) RecupererEtat(app Appareil, dateCible time.Time) (*EtatComplet, error) {
+	if !dateCible.IsZero() {
+		return b.client.RecupererHistorique(app.EntityID, dateCible)
+	}
+
+	return b.client.RecupererEtatLive(app.EntityID)
+}
+
+func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, dateCible time.Time) types.Message {
+	if !dateCible.IsZero() {
+		return types.Message{
+			SMS: types.MessageDetails{
+				Texte:  i18n.T("message.retour.etat.heure"),
+				Params: []interface{}{app.FriendlyNameExact, dateCible.Format("15h04"), etat.State},
+			},
+			Voix: types.MessageDetails{
+				Texte:  i18n.T("assistant.retour.etat.heure"),
+				Params: []interface{}{app.FriendlyNameExact, dateCible.Format("15h04"), etat.State},
+			},
+		}
+	}
+	return types.Message{
+		SMS: types.MessageDetails{
+			Texte:  i18n.T("message.retour.etat"),
+			Params: []interface{}{app.FriendlyNameExact, dateCible.Format("15h04"), etat.State},
+		},
+		Voix: types.MessageDetails{
+			Texte:  i18n.T("assistant.retour.etat"),
+			Params: []interface{}{app.FriendlyNameExact, etat.State},
+		},
+	}
 }

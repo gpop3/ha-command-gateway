@@ -149,7 +149,7 @@ func resolveTranscriptMode(cfg *config.Config) transcribe.Mode {
 func modeCommand(inputText string, etat *int, analyseur *nlp.Analyseur) bool {
 	reponse, verbe, match, isAction, appareil := analyseur.AnalyserEtExecuter(inputText)
 	fmt.Println("Réponse : ", reponse)
-	if appareil == nil {
+	if appareil == nil || reponse == nil {
 		if match {
 			speech.Parler("assistant.retour.erreur")
 		} else {
@@ -159,11 +159,7 @@ func modeCommand(inputText string, etat *int, analyseur *nlp.Analyseur) bool {
 		if isAction {
 			speech.Parler("assistant.retour.action", verbe, appareil.FriendlyName)
 		} else {
-			if reponse.Date != nil {
-				speech.Parler("assistant.retour.etat.heure", appareil.FriendlyName, reponse.Date, reponse.TexteVoix)
-			} else {
-				speech.Parler("assistant.retour.etat", appareil.FriendlyName, reponse.TexteVoix)
-			}
+			speech.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
 		}
 	}
 	fmt.Println("--- En attente d'un nouvel ordre ---")
@@ -215,9 +211,17 @@ func traiterEtat(inputText string, etat *int, numeroTel string, analyseur *nlp.A
 
 	case ModeSmsCommand:
 		if len(texte) > 3 {
-			reponse, _, _, _, _ := analyseur.AnalyserEtExecuter(inputText)
+			reponse, _, _, isAction, _ := analyseur.AnalyserEtExecuter(inputText)
 			fmt.Println("Réponse SMS :", reponse)
-			if err := gsmClient.EnvoyerSMS(numeroTel, reponse.TextSms); err != nil {
+
+			textMessage := ""
+			if isAction {
+				textMessage = reponse.SMS.Texte
+			} else {
+				textMessage = i18n.T(reponse.SMS.Texte, reponse.SMS.Params...)
+			}
+
+			if err := gsmClient.EnvoyerSMS(numeroTel, textMessage); err != nil {
 				log.Printf("❌ Envoi SMS échoué : %v", err)
 			}
 			fmt.Println("--- En attente ---")
