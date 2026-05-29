@@ -100,7 +100,7 @@ func (s *ServiceMediaPlayer) ExtraireParams(texte string) map[string]interface{}
 	}
 
 	// Sources fixes (apps/entrées)
-	sources := []string{"spotify", "deezer", "radio", "hdmi", "bluetooth", "airplay", "youtube"}
+	sources := []string{"spotify", "deezer", "radio", "hdmi", "bluetooth", "youtube"}
 	for _, src := range sources {
 		if strings.Contains(texte, src) {
 			params["source"] = src
@@ -180,7 +180,7 @@ func (s *ServiceMediaPlayer) ExecuterCommande(app Appareil, verbe string, params
 
 func (s *ServiceMediaPlayer) MotsReconnus() []string {
 	return append(s.Verbes(),
-		"spotify", "deezer", "radio", "hdmi", "bluetooth", "airplay", "youtube",
+		"spotify", "deezer", "radio", "hdmi", "bluetooth", "youtube",
 		"cinéma", "musique", "nuit", "sport", "dialogue",
 		"aléatoire", "shuffle", "volume", "son", "lecture", "sur",
 	)

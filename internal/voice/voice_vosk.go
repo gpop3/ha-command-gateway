@@ -80,12 +80,11 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 	meilleur := res.Alternatives[0]
 
 	if meilleur.Text == "" {
-		log.Printf("🔇 [Rejeté] Texte vide (bruit ambiant), score : %d", int(meilleur.Confidence))
 		return meilleur, false
 	}
 
 	if meilleur.Confidence < SeuilConfianceMin {
-		log.Printf("🚫 [Rejeté] Confiance trop faible (%d) pour : %q", int(meilleur.Confidence), meilleur.Text)
+		log.Printf("[VOSK] Confiance trop faible (%d) pour : %q", int(meilleur.Confidence), meilleur.Text)
 		return meilleur, false
 	}
 
@@ -106,7 +105,6 @@ func BoucleVosk(
 		if n > 0 {
 			if rec.AcceptWaveform(buf[:n]) == 1 {
 				raw := rec.Result()
-				log.Printf("DEBUG résultat complet : %s", raw)
 
 				var res VoskResultMultiple
 				if jsonErr := json.Unmarshal([]byte(raw), &res); jsonErr != nil {
@@ -115,9 +113,6 @@ func BoucleVosk(
 				}
 
 				if cmd, ok := commandeEstFiable(res); ok {
-					log.Printf("✅ [Validé] Commande envoyée : %q (%d)",
-						cmd.Text, int(cmd.Confidence))
-
 					canal <- input.Commande{
 						Texte: cmd.Text,
 						Etat:  etat,
