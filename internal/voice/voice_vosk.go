@@ -85,7 +85,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 	log.Printf("DEBUG confidence brute : %f", meilleur.Confidence)
 
 	if meilleur.Text == "" || meilleur.Confidence < SeuilConfianceMin {
-		log.Printf("🚫 [Rejeté] Confiance trop faible (%d%%) pour : %q",
+		log.Printf("🚫 [Rejeté] Confiance trop faible (%d) pour : %q",
 			int(meilleur.Confidence), meilleur.Text)
 		return meilleur, false
 	}
@@ -95,7 +95,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 		ecart := meilleur.Confidence - autre.Confidence
 
 		if ecart < EcartMinSecurite && normaliser(meilleur.Text) != normaliser(autre.Text) {
-			log.Printf("🧠 [Rejeté] Hésitation trop forte entre le choix principal %q (%d%%) et l'alternative #%d %q (%d%%)",
+			log.Printf("🧠 [Rejeté] Hésitation trop forte entre le choix principal %q (%d) et l'alternative #%d %q (%d)",
 				meilleur.Text, int(meilleur.Confidence),
 				i+1, autre.Text, int(autre.Confidence))
 			return meilleur, false
@@ -125,7 +125,7 @@ func BoucleVosk(
 				}
 
 				if cmd, ok := commandeEstFiable(res); ok {
-					log.Printf("✅ [Validé] Commande envoyée : %q (%d%%)",
+					log.Printf("✅ [Validé] Commande envoyée : %q (%d)",
 						cmd.Text, int(cmd.Confidence*100))
 
 					canal <- input.Commande{
