@@ -41,6 +41,6 @@ type Service interface {
 	// ExecuterCommande même sans verbe d'action détecté.
 	EstActionParDefaut() bool
 
-	// EstDomaineSansEntites retourne si pas d'entité à charger
-	EstDomaineSansEntites() bool
+	// AutoriseMotsSansEntites Autorise la grammaire si aucun entité dans HA
+	AutoriseMotsSansEntites() bool
 }

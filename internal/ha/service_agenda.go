@@ -237,6 +237,6 @@ func (s *ServiceAgenda) EtatEnMessage(app Appareil, etat *EtatComplet, etatCusto
 	}
 }
 
-func (s *ServiceAgenda) EstDomaineSansEntites() bool {
+func (s *ServiceAgenda) AutoriseMotsSansEntites() bool {
 	return true
 }

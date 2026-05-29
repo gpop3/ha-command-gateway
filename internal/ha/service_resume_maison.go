@@ -122,6 +122,6 @@ func (s *ServiceResumeMaison) resumeComplet(appareils []Appareil) string {
 	return sb.String()
 }
 
-func (s *ServiceResumeMaison) EstDomaineSansEntites() bool {
+func (s *ServiceResumeMaison) AutoriseMotsSansEntites() bool {
 	return true
 }

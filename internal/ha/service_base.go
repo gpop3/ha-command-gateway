@@ -229,6 +229,6 @@ func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom 
 	}
 }
 
-func (b *serviceBase) EstDomaineSansEntites() bool {
+func (b *serviceBase) AutoriseMotsSansEntites() bool {
 	return false
 }

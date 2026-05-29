@@ -53,8 +53,7 @@ func (s *ServiceWeather) ExecuterCommande(app Appareil, verbe string, params map
 
 func (s *ServiceWeather) MotsReconnus() []string {
 	return []string{
-		"météo", "temps", "pluie", "soleil", "nuage", "vent", "brouillard",
-		"demain", "prévisions", "température", "chaud", "froid",
+		"demain", "heure", "après-midi", "soir", "maintenant",
 	}
 }
 
@@ -143,8 +142,4 @@ func tradCondition(condition string) string {
 		return fr
 	}
 	return condition
-}
-
-func (s *ServiceWeather) EstDomaineSansEntites() bool {
-	return true
 }

@@ -68,6 +68,6 @@ func (s *ServiceTime) repondre(params map[string]interface{}) string {
 	}
 }
 
-func (s *ServiceTime) EstDomaineSansEntites() bool {
+func (s *ServiceTime) AutoriseMotsSansEntites() bool {
 	return true
 }
