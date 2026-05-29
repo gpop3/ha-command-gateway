@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	SeuilConfianceMin = 100.0
+	SeuilConfianceMin = 70.0
 )
 
 type VoskAlternative struct {

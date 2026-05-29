@@ -39,6 +39,60 @@ func Init(piperURL_, alsaDevice string) error {
 	return nil
 }
 
+type composant struct {
+	id    string
+	texte string
+}
+
+func construireComposants(cleEtTexte string, args ...interface{}) []composant {
+	var composants []composant
+
+	ajouter := func(id, texte string) {
+		texte = strings.TrimSpace(texte)
+		if texte != "" && contientDuTexte(texte) {
+			composants = append(composants, composant{id: id, texte: texte})
+		}
+	}
+
+	// Texte brut sans args
+	if len(args) == 0 && (strings.Contains(cleEtTexte, " ") || !estUneCleI18n(cleEtTexte)) {
+		id := fmt.Sprintf("raw_%x", md5.Sum([]byte(cleEtTexte)))
+		ajouter(id, cleEtTexte)
+		return composants
+	}
+
+	pattern := recupererPatternDepuisI18n(cleEtTexte)
+
+	// Clé i18n sans args
+	if len(args) == 0 {
+		ajouter(cleEtTexte, pattern)
+		return composants
+	}
+
+	// Clé i18n avec args — découpage en parties statiques + dynamiques
+	format := pattern
+	verbes := []string{"%v", "%s", "%d", "%.1f", "%.0f", "%02d"}
+	for _, v := range verbes {
+		format = strings.ReplaceAll(format, v, "||TAG||")
+	}
+	partiesStatiques := strings.Split(format, "||TAG||")
+
+	for i, partie := range partiesStatiques {
+		partie = strings.TrimSpace(partie)
+		if partie != "" && contientDuTexte(partie) {
+			ajouter(fmt.Sprintf("%s_part_%d", cleEtTexte, i), partie)
+		}
+		if i < len(args) {
+			valeurStr := strings.TrimSpace(fmt.Sprintf("%v", args[i]))
+			if valeurStr != "" && contientDuTexte(valeurStr) {
+				ajouter(fmt.Sprintf("dyn_%x", md5.Sum([]byte(valeurStr))), valeurStr)
+			}
+		}
+	}
+
+	return composants
+}
+
 // Parler prend la clé i18n, le pattern de traduction brute et ses arguments.
 // Exemple : Parler("maison.temp.ligne", "• %s : %s°C\n", "Salon", "22.5")
 // Parler s'adapte automatiquement :
@@ -46,7 +100,6 @@ func Init(piperURL_, alsaDevice string) error {
 // - Si cleEtTexte est une phrase brute (ex: "Attention, la voiture est ouverte"), elle gère le cache par son hash MD5.
 func Parler(cleEtTexte string, args ...interface{}) {
 	if !started {
-		fmt.Println("TTS non initialisé")
 		return
 	}
 
@@ -56,62 +109,43 @@ func Parler(cleEtTexte string, args ...interface{}) {
 		return
 	}
 
-	var pcmGlobal []byte
-
-	if len(args) == 0 && (strings.Contains(cleEtTexte, " ") || !estUneCleI18n(cleEtTexte)) {
-		// Le hash du texte brut sert d'ID unique de cache
-		idCache := fmt.Sprintf("raw_%x", md5.Sum([]byte(cleEtTexte)))
-		pcm, err := obtenirOuGenerer(idCache, cleEtTexte)
-		if err != nil {
-			fmt.Printf("⚠️ [TTS] Erreur texte brut : %v\n", err)
-			return
-		}
-		pcmGlobal = pcm
-	} else {
-		pattern := recupererPatternDepuisI18n(cleEtTexte)
-
-		if len(args) == 0 {
-			pcm, err := obtenirOuGenerer(cleEtTexte, pattern)
-			if err != nil {
-				fmt.Printf("⚠️ [TTS] Erreur : %v\n", err)
-				return
-			}
-			pcmGlobal = pcm
-		} else {
-			format := pattern
-			verbes := []string{"%v", "%s", "%d", "%.1f", "%.0f", "%02d"}
-			for _, v := range verbes {
-				format = strings.ReplaceAll(format, v, "||TAG||")
-			}
-			partiesStatiques := strings.Split(format, "||TAG||")
-
-			for i, partie := range partiesStatiques {
-				partie = strings.TrimSpace(partie)
-				if partie != "" && contientDuTexte(partie) {
-					idComposant := fmt.Sprintf("%s_part_%d", cleEtTexte, i)
-					pcm, err := obtenirOuGenerer(idComposant, partie)
-					if err == nil {
-						pcmGlobal = append(pcmGlobal, pcm...)
-					}
-				}
-
-				if i < len(args) {
-					valeurStr := fmt.Sprintf("%v", args[i])
-					valeurStr = strings.TrimSpace(valeurStr)
-					if valeurStr != "" && contientDuTexte(valeurStr) {
-						idDyn := fmt.Sprintf("dyn_%x", md5.Sum([]byte(valeurStr)))
-						pcm, err := obtenirOuGenerer(idDyn, valeurStr)
-						if err == nil {
-							pcmGlobal = append(pcmGlobal, pcm...)
-						}
-					}
-				}
-			}
-		}
+	composants := construireComposants(cleEtTexte, args...)
+	if len(composants) == 0 {
+		return
 	}
 
-	if len(pcmGlobal) > 0 {
-		jouerPCM(pcmGlobal)
+	type resultat struct {
+		pcm []byte
+		err error
+	}
+
+	// Précharge le composant à l'index donné dans un chan
+	precharger := func(idx int) chan resultat {
+		ch := make(chan resultat, 1)
+		go func() {
+			pcm, err := obtenirOuGenerer(composants[idx].id, composants[idx].texte)
+			ch <- resultat{pcm, err}
+		}()
+		return ch
+	}
+
+	// On démarre le chargement du premier composant
+	prochainChan := precharger(0)
+
+	for i := 0; i < len(composants); i++ {
+		// Précharge le suivant pendant qu'on attend le courant
+		var suivantChan chan resultat
+		if i+1 < len(composants) {
+			suivantChan = precharger(i + 1)
+		}
+
+		// Attend et joue le courant
+		res := <-prochainChan
+		if res.err == nil && len(res.pcm) > 0 {
+			jouerPCM(res.pcm)
+		}
+
+		prochainChan = suivantChan
 	}
 }
 
