@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	SeuilConfianceMin = 0.50
-	EcartMinSecurite  = 0.15
+	SeuilConfianceMin = 100.0
+	EcartMinSecurite  = 5.0
 )
 
 type VoskAlternative struct {

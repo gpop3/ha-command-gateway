@@ -6,6 +6,7 @@ import (
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
 	"ha-command-gateway/pkg/types"
+	"log"
 	"regexp"
 	"slices"
 	"sort"
@@ -133,6 +134,10 @@ func (a *Analyseur) GenererGrammaire() string {
 		if !ok {
 			continue
 		}
+		log.Printf("DEBUG verbes: %+v", svc.Verbes())
+		log.Printf("DEBUG mots: %+v", svc.MotsReconnus())
+		log.Printf("DEBUG catalogue[0]: %+v", a.catalogue[0])
+
 		for _, verbe := range svc.Verbes() {
 			for _, mot := range strings.Fields(verbe) {
 				ajouter(mot)
