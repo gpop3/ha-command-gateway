@@ -5,11 +5,10 @@ import "strings"
 type ServiceAlarm struct{ serviceBase }
 
 func NewServiceAlarm(c *Client) *ServiceAlarm {
-	return &ServiceAlarm{newServiceBase("alarm_control_panel", c, map[string]string{
-		// Uniquement des verbes d'action
-		"arme":      "alarm_arm_away",
-		"désarme":   "alarm_disarm",
-		"désactive": "alarm_disarm",
+	return &ServiceAlarm{newServiceBase("alarm_control_panel", c, map[string]VerbeConfig{
+		"arme":      {Action: "alarm_arm_away", Params: []string{"nuit", "dodo", "presence", "vacances", "absent"}},
+		"désarme":   {Action: "alarm_disarm"},
+		"désactive": {Action: "alarm_disarm"},
 	})}
 }
 
@@ -48,6 +47,6 @@ func (s *ServiceAlarm) ExecuterCommande(app Appareil, verbe string, params map[s
 
 func (s *ServiceAlarm) MotsReconnus() []string {
 	return append(s.Verbes(),
-		"alarme", "nuit", "dodo", "présence", "vacances", "absent",
+		"alarme",
 	)
 }

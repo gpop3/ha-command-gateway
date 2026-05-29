@@ -4,12 +4,12 @@ package ha
 type ServiceAutomation struct{ serviceBase }
 
 func NewServiceAutomation(c *Client) *ServiceAutomation {
-	return &ServiceAutomation{newServiceBase("automation", c, map[string]string{
-		"déclenche": "trigger",
-		"lance":     "trigger",
-		"active":    "turn_on",
-		"désactive": "turn_off",
-		"bascule":   "toggle",
+	return &ServiceAutomation{newServiceBase("automation", c, map[string]VerbeConfig{
+		"déclenche": {Action: "trigger"},
+		"lance":     {Action: "trigger"},
+		"active":    {Action: "turn_on"},
+		"désactive": {Action: "turn_off"},
+		"bascule":   {Action: "toggle"},
 	})}
 }
 

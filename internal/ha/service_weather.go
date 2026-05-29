@@ -19,8 +19,8 @@ var conditionsFR = map[string]string{
 }
 
 func NewServiceWeather(c *Client) *ServiceWeather {
-	// Map vide — "météo", "pluie", "soleil" sont des sujets, pas des verbes d'action
-	return &ServiceWeather{newServiceBase("weather", c, map[string]string{})}
+	return &ServiceWeather{newServiceBase("weather", c, map[string]VerbeConfig{})}
+
 }
 
 func (s *ServiceWeather) ScoreDomaine(estAction bool) int { return 20 }

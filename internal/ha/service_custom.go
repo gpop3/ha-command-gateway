@@ -14,11 +14,11 @@ type ServiceCustom struct {
 
 // ConfigService décrit un service custom dans services.yaml
 type ConfigService struct {
-	Domain        string            `yaml:"domain"`
-	Verbs         map[string]string `yaml:"verbs"`
-	Words         []string          `yaml:"words"`
-	DefaultAction bool              `yaml:"default_action"`
-	Score         int               `yaml:"score"`
+	Domain        string                 `yaml:"domain"`
+	Verbs         map[string]VerbeConfig `yaml:"verbs"`
+	Words         []string               `yaml:"words"`
+	DefaultAction bool                   `yaml:"default_action"`
+	Score         int                    `yaml:"score"`
 }
 
 // newServiceCustom crée un service à partir d'une ConfigService

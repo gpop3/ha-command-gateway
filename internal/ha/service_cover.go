@@ -8,14 +8,14 @@ import (
 type ServiceCover struct{ serviceBase }
 
 func NewServiceCover(c *Client) *ServiceCover {
-	return &ServiceCover{newServiceBase("cover", c, map[string]string{
-		"ouvre":  "open_cover",
-		"ferme":  "close_cover",
-		"stoppe": "stop_cover",
-		"arrête": "stop_cover",
-		"stop":   "stop_cover",
-		"baisse": "close_cover",
-		"monte":  "open_cover",
+	return &ServiceCover{newServiceBase("cover", c, map[string]VerbeConfig{
+		"ouvre":  {Action: "open_cover"},
+		"ferme":  {Action: "close_cover"},
+		"stoppe": {Action: "stop_cover"},
+		"arrête": {Action: "stop_cover"},
+		"stop":   {Action: "stop_cover"},
+		"baisse": {Action: "close_cover"},
+		"monte":  {Action: "open_cover"},
 	})}
 }
 

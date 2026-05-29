@@ -4,15 +4,15 @@ package ha
 type ServiceTodo struct{ serviceBase }
 
 func NewServiceTodo(c *Client) *ServiceTodo {
-	return &ServiceTodo{newServiceBase("todo", c, map[string]string{
-		"ajoute":   "add_item",
-		"rajoute":  "add_item",
-		"supprime": "remove_item",
-		"retire":   "remove_item",
-		"complète": "update_item",
-		"termine":  "update_item",
-		"liste":    "get_items",
-		"montre":   "get_items",
+	return &ServiceTodo{newServiceBase("todo", c, map[string]VerbeConfig{
+		"ajoute":   {Action: "add_item"},
+		"rajoute":  {Action: "add_item"},
+		"supprime": {Action: "remove_item"},
+		"retire":   {Action: "remove_item"},
+		"complète": {Action: "update_item"},
+		"termine":  {Action: "update_item"},
+		"liste":    {Action: "get_items"},
+		"montre":   {Action: "get_items"},
 	})}
 }
 

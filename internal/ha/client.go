@@ -49,7 +49,6 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 	Register(NewServiceAlarm(c))
 	Register(NewServiceFan(c))
 	Register(NewServiceLock(c))
-	Register(NewServiceNotify(c, cfg.NotifyDevice))
 	Register(NewServiceScene(c))
 	Register(NewServiceScript(c))
 	Register(NewServiceTodo(c))

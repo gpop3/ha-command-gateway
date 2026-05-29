@@ -5,7 +5,7 @@ package ha
 type ServiceBinarySensor struct{ serviceBase }
 
 func NewServiceBinarySensor(c *Client) *ServiceBinarySensor {
-	return &ServiceBinarySensor{newServiceBase("binary_sensor", c, map[string]string{})}
+	return &ServiceBinarySensor{serviceBase: newServiceBase("binary_sensor", c, map[string]VerbeConfig{})}
 }
 
 func (s *ServiceBinarySensor) ScoreDomaine(estAction bool) int {

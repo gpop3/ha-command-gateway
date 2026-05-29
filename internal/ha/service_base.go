@@ -17,10 +17,10 @@ import (
 type serviceBase struct {
 	domaine string
 	client  *Client
-	verbes  map[string]string // "allume" → "turn_on"
+	verbes  map[string]VerbeConfig // "allume" → {Action: "turn_on", Params: [...]}
 }
 
-func newServiceBase(domaine string, client *Client, verbes map[string]string) serviceBase {
+func newServiceBase(domaine string, client *Client, verbes map[string]VerbeConfig) serviceBase {
 	return serviceBase{domaine: domaine, client: client, verbes: verbes}
 }
 
@@ -29,10 +29,10 @@ func (b *serviceBase) Domaine() string { return b.domaine }
 func (b *serviceBase) Actions() []string {
 	seen := map[string]bool{}
 	var actions []string
-	for _, a := range b.verbes {
-		if !seen[a] {
-			seen[a] = true
-			actions = append(actions, a)
+	for _, cfg := range b.verbes {
+		if !seen[cfg.Action] {
+			seen[cfg.Action] = true
+			actions = append(actions, cfg.Action)
 		}
 	}
 	sort.Strings(actions)
@@ -56,8 +56,19 @@ func (b *serviceBase) MotsReconnus() []string {
 
 func (b *serviceBase) Verbe(verbe string) (string, bool) {
 	v := strings.ToLower(strings.TrimSpace(verbe))
-	a, ok := b.verbes[v]
-	return a, ok
+	cfg, ok := b.verbes[v]
+	return cfg.Action, ok
+}
+
+// VerbsAvecParams retourne les verbes qui ont des paramètres associés.
+func (b *serviceBase) VerbsAvecParams() []VerbeConfig {
+	var result []VerbeConfig
+	for verbe, cfg := range b.verbes {
+		if len(cfg.Params) > 0 {
+			result = append(result, VerbeConfig{Action: verbe, Params: cfg.Params})
+		}
+	}
+	return result
 }
 
 func (b *serviceBase) ScoreDomaine(_ bool) int { return 0 }
@@ -140,8 +151,8 @@ func (b *serviceBase) ExtraireParams(texte string) map[string]interface{} {
 func (b *serviceBase) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
 	action, ok := b.Verbe(verbe)
 	if !ok {
-		for _, a := range b.verbes {
-			action = a
+		for _, cfg := range b.verbes {
+			action = cfg.Action
 			break
 		}
 	}
@@ -186,7 +197,6 @@ httpFallback:
 func (b *serviceBase) RecupererEtat(app Appareil, dateCible time.Time, params map[string]interface{}) (*EtatComplet, any, error) {
 	if !dateCible.IsZero() {
 		etat, err := b.client.RecupererHistorique(app.EntityID, dateCible)
-
 		return etat, nil, err
 	}
 

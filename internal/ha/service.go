@@ -43,4 +43,6 @@ type Service interface {
 
 	// AutoriseMotsSansEntites Autorise la grammaire si aucun entité dans HA
 	AutoriseMotsSansEntites() bool
+
+	VerbsAvecParams() []VerbeConfig
 }

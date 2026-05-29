@@ -5,7 +5,8 @@ package ha
 type ServiceSensor struct{ serviceBase }
 
 func NewServiceSensor(c *Client) *ServiceSensor {
-	return &ServiceSensor{newServiceBase("sensor", c, map[string]string{})}
+	return &ServiceSensor{newServiceBase("sensor", c, map[string]VerbeConfig{})}
+
 }
 
 func (s *ServiceSensor) ScoreDomaine(estAction bool) int {

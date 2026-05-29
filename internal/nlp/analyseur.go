@@ -163,7 +163,15 @@ func (a *Analyseur) GenererGrammaire() string {
 
 		var nomsEntites []string
 		for _, entite := range entites {
-			nomsEntites = append(nomsEntites, text.Normaliser(entite.FriendlyName))
+			nom := text.Normaliser(entite.FriendlyName)
+			if strings.ContainsAny(nom, "0123456789'") {
+				continue
+			}
+			nomsEntites = append(nomsEntites, nom)
+		}
+
+		if len(nomsEntites) == 0 {
+			continue
 		}
 
 		if len(verbes) == 0 {
@@ -186,11 +194,25 @@ func (a *Analyseur) GenererGrammaire() string {
 			}
 		}
 
-		for _, verbe := range verbes {
-			for _, nom := range nomsEntites {
-				for _, mot := range mots {
-					if verbe != mot && !estUnVerbe[mot] {
-						ajouter(verbe + " " + nom + " " + mot)
+		verbsAvecParams := svc.VerbsAvecParams()
+		if len(verbsAvecParams) > 0 {
+			for _, vp := range verbsAvecParams {
+				verbe := text.Normaliser(vp.Action)
+				for _, nom := range nomsEntites {
+					nomMots := make(map[string]bool)
+					for _, m := range strings.Fields(nom) {
+						nomMots[m] = true
+					}
+					for _, param := range vp.Params {
+						param = text.Normaliser(param)
+						if !nomMots[param] {
+							ajouter(verbe + " " + nom + " " + param)
+						}
+					}
+					for _, mot := range mots {
+						if !estUnVerbe[mot] && !nomMots[mot] {
+							ajouter(verbe + " " + nom + " " + mot)
+						}
 					}
 				}
 			}

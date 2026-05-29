@@ -5,13 +5,17 @@ import "strings"
 type ServiceLight struct{ serviceBase }
 
 func NewServiceLight(c *Client) *ServiceLight {
-	return &ServiceLight{newServiceBase("light", c, map[string]string{
-		"allume":  "turn_on",
-		"éclaire": "turn_on",
-		"active":  "turn_on",
-		"éteins":  "turn_off",
-		"coupe":   "turn_off",
-		"bascule": "toggle",
+	couleurs := []string{"rouge", "vert", "bleu", "jaune", "orange", "violet", "rose", "blanc", "cyan"}
+	temperatures := []string{"chaud", "chaleureux", "froid", "neutre", "daylight"}
+	params := append(couleurs, temperatures...)
+
+	return &ServiceLight{newServiceBase("light", c, map[string]VerbeConfig{
+		"allume":  {Action: "turn_on", Params: params},
+		"éclaire": {Action: "turn_on", Params: params},
+		"active":  {Action: "turn_on", Params: params},
+		"éteins":  {Action: "turn_off"},
+		"coupe":   {Action: "turn_off"},
+		"bascule": {Action: "toggle", Params: params},
 	})}
 }
 
@@ -66,9 +70,5 @@ func (s *ServiceLight) ExecuterCommande(app Appareil, verbe string, params map[s
 }
 
 func (s *ServiceLight) MotsReconnus() []string {
-	return append(s.Verbes(),
-		"rouge", "vert", "bleu", "jaune", "orange", "violet", "rose", "blanc", "cyan",
-		"chaud", "chaleureux", "froid", "neutre", "daylight",
-		"lumière", "lampe",
-	)
+	return s.Verbes()
 }

@@ -1,5 +1,11 @@
 package ha
 
+// VerbeConfig est la confirguration verbe vers action et paramètres
+type VerbeConfig struct {
+	Action string
+	Params []string
+}
+
 // Appareil représente une entité Home Assistant en mémoire locale
 type Appareil struct {
 	EntityID          string

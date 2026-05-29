@@ -6,17 +6,17 @@ import "strings"
 type ServiceFan struct{ serviceBase }
 
 func NewServiceFan(c *Client) *ServiceFan {
-	return &ServiceFan{newServiceBase("fan", c, map[string]string{
-		"allume":     "turn_on",
-		"active":     "turn_on",
-		"éteins":     "turn_off",
-		"coupe":      "turn_off",
-		"accélère":   "increase_speed",
-		"plus vite":  "increase_speed",
-		"ralentis":   "decrease_speed",
-		"moins vite": "decrease_speed",
-		"oscille":    "oscillate",
-		"pivote":     "oscillate",
+	return &ServiceFan{newServiceBase("fan", c, map[string]VerbeConfig{
+		"allume":     {Action: "turn_on", Params: []string{"silencieux", "turbo", "auto", "normal", "nuit"}},
+		"active":     {Action: "turn_on", Params: []string{"silencieux", "turbo", "auto", "normal", "nuit"}},
+		"éteins":     {Action: "turn_off"},
+		"coupe":      {Action: "turn_off"},
+		"accélère":   {Action: "increase_speed"},
+		"plus vite":  {Action: "increase_speed"},
+		"ralentis":   {Action: "decrease_speed"},
+		"moins vite": {Action: "decrease_speed"},
+		"oscille":    {Action: "oscillate", Params: []string{"avant", "arriere", "inverse"}},
+		"pivote":     {Action: "oscillate", Params: []string{"avant", "arriere", "inverse"}},
 	})}
 }
 
@@ -86,9 +86,5 @@ func (s *ServiceFan) ExecuterCommande(app Appareil, verbe string, params map[str
 }
 
 func (s *ServiceFan) MotsReconnus() []string {
-	return append(s.Verbes(),
-		"silencieux", "turbo", "auto", "normal", "nuit",
-		"avant", "arrière", "inverse",
-		"oscillat", "pivote",
-	)
+	return s.Verbes()
 }

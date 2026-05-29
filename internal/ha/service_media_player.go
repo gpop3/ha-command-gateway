@@ -12,17 +12,21 @@ type ServiceMediaPlayer struct {
 }
 
 func NewServiceMediaPlayer(c *Client) *ServiceMediaPlayer {
+	sources := []string{"spotify", "radio", "hdmi", "bluetooth", "youtube"}
+	modes := []string{"cinema", "nuit", "sport", "dialogue", "aleatoire", "shuffle"}
+	paramsLecture := append(sources, modes...)
+
 	return &ServiceMediaPlayer{
-		serviceBase: newServiceBase("media_player", c, map[string]string{
-			"allume":    "turn_on",
-			"éteins":    "turn_off",
-			"joue":      "media_play",
-			"lance":     "media_play",
-			"pause":     "media_pause",
-			"stop":      "media_stop",
-			"arrête":    "media_stop",
-			"suivant":   "media_next_track",
-			"précédent": "media_previous_track",
+		serviceBase: newServiceBase("media_player", c, map[string]VerbeConfig{
+			"allume":    {Action: "turn_on"},
+			"éteins":    {Action: "turn_off"},
+			"joue":      {Action: "media_play", Params: paramsLecture},
+			"lance":     {Action: "media_play", Params: paramsLecture},
+			"pause":     {Action: "media_pause"},
+			"stop":      {Action: "media_stop"},
+			"arrête":    {Action: "media_stop"},
+			"suivant":   {Action: "media_next_track"},
+			"précédent": {Action: "media_previous_track"},
 		}),
 	}
 }
@@ -179,9 +183,5 @@ func (s *ServiceMediaPlayer) ExecuterCommande(app Appareil, verbe string, params
 }
 
 func (s *ServiceMediaPlayer) MotsReconnus() []string {
-	return append(s.Verbes(),
-		"spotify", "deezer", "radio", "hdmi", "bluetooth", "youtube",
-		"cinéma", "musique", "nuit", "sport", "dialogue",
-		"aléatoire", "shuffle", "volume", "son", "lecture", "sur",
-	)
+	return s.Verbes()
 }

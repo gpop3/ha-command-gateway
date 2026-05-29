@@ -20,8 +20,8 @@ var joursFR = []string{
 }
 
 func NewServiceTime(c *Client) *ServiceTime {
-	// Map vide — "heure", "date", "jour" sont des sujets, pas des verbes
-	return &ServiceTime{newServiceBase("time", c, map[string]string{})}
+	return &ServiceTime{newServiceBase("time", c, map[string]VerbeConfig{})}
+
 }
 
 func (s *ServiceTime) ScoreDomaine(_ bool) int { return 20 }

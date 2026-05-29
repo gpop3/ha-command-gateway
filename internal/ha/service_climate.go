@@ -23,15 +23,14 @@ const (
 )
 
 func NewServiceClimate(c *Client) *ServiceClimate {
-	return &ServiceClimate{newServiceBase("climate", c, map[string]string{
-		// Uniquement des verbes d'action
-		"allume":    "turn_on",
-		"active":    "turn_on",
-		"éteins":    "turn_off",
-		"coupe":     "turn_off",
-		"règle":     "set_temperature",
-		"mets":      "set_temperature",
-		"programme": "set_preset_mode",
+	return &ServiceClimate{newServiceBase("climate", c, map[string]VerbeConfig{
+		"allume":    {Action: "turn_on"},
+		"active":    {Action: "turn_on", Params: []string{"chauffage", "climatise", "ventilateur", "sec", "auto"}},
+		"éteins":    {Action: "turn_off"},
+		"coupe":     {Action: "turn_off"},
+		"règle":     {Action: "set_temperature", Params: []string{"degres", "degre", "temperature"}},
+		"mets":      {Action: "set_temperature", Params: []string{"confort", "eco", "absent", "absence", "boost", "nuit", "sommeil", "antigel"}},
+		"programme": {Action: "set_preset_mode", Params: []string{"confort", "eco", "absent", "absence", "boost", "nuit", "sommeil", "antigel"}},
 	})}
 }
 
@@ -93,9 +92,7 @@ func (s *ServiceClimate) ExecuterCommande(app Appareil, verbe string, params map
 
 func (s *ServiceClimate) MotsReconnus() []string {
 	return append(s.Verbes(),
-		"confort", "éco", "eco", "absent", "absence", "boost", "nuit", "sommeil", "hors-gel", "antigel",
-		"chauffage", "climatise", "ventilateur", "sec", "auto",
-		"degrés", "degré", "température", "thermostat", "chauffe", "refroidis",
+		"température", "thermostat", "chauffe", "refroidis",
 	)
 }
 

@@ -7,16 +7,16 @@ import "fmt"
 type ServiceShoppingList struct{ serviceBase }
 
 func NewServiceShoppingList(c *Client) *ServiceShoppingList {
-	return &ServiceShoppingList{newServiceBase("shopping_list", c, map[string]string{
-		"ajoute":   "add_item",
-		"rajoute":  "add_item",
-		"mets":     "add_item",
-		"supprime": "remove_item",
-		"retire":   "remove_item",
-		"coche":    "complete_item",
-		"complète": "complete_item",
-		"décoche":  "incomplete_item",
-		"vide":     "clear_completed_items",
+	return &ServiceShoppingList{newServiceBase("shopping_list", c, map[string]VerbeConfig{
+		"ajoute":   {Action: "add_item"},
+		"rajoute":  {Action: "add_item"},
+		"mets":     {Action: "add_item"},
+		"supprime": {Action: "remove_item"},
+		"retire":   {Action: "remove_item"},
+		"coche":    {Action: "complete_item"},
+		"complète": {Action: "complete_item"},
+		"décoche":  {Action: "incomplete_item"},
+		"vide":     {Action: "clear_completed_items"},
 	})}
 }
 

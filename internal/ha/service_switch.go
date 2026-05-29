@@ -4,13 +4,13 @@ package ha
 type ServiceSwitch struct{ serviceBase }
 
 func NewServiceSwitch(c *Client) *ServiceSwitch {
-	return &ServiceSwitch{newServiceBase("switch", c, map[string]string{
-		"allume":    "turn_on",
-		"active":    "turn_on",
-		"éteins":    "turn_off",
-		"coupe":     "turn_off",
-		"désactive": "turn_off",
-		"bascule":   "toggle",
+	return &ServiceSwitch{newServiceBase("switch", c, map[string]VerbeConfig{
+		"allume":    {Action: "turn_on"},
+		"active":    {Action: "turn_on"},
+		"éteins":    {Action: "turn_off"},
+		"coupe":     {Action: "turn_off"},
+		"désactive": {Action: "turn_off"},
+		"bascule":   {Action: "toggle"},
 	})}
 }
 

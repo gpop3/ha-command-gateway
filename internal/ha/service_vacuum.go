@@ -6,18 +6,20 @@ import "strings"
 type ServiceVacuum struct{ serviceBase }
 
 func NewServiceVacuum(c *Client) *ServiceVacuum {
-	return &ServiceVacuum{newServiceBase("vacuum", c, map[string]string{
-		"démarre":  "start",
-		"lance":    "start",
-		"aspire":   "start",
-		"pause":    "pause",
-		"stoppe":   "stop",
-		"arrête":   "stop",
-		"stop":     "stop",
-		"rentre":   "return_to_base",
-		"base":     "return_to_base",
-		"recharge": "return_to_base",
-		"localise": "locate",
+	vitesses := []string{"silencieux", "normal", "turbo", "max", "fort", "doux"}
+
+	return &ServiceVacuum{newServiceBase("vacuum", c, map[string]VerbeConfig{
+		"démarre":  {Action: "start", Params: vitesses},
+		"lance":    {Action: "start", Params: vitesses},
+		"aspire":   {Action: "start", Params: vitesses},
+		"pause":    {Action: "pause"},
+		"stoppe":   {Action: "stop"},
+		"arrête":   {Action: "stop"},
+		"stop":     {Action: "stop"},
+		"rentre":   {Action: "return_to_base"},
+		"base":     {Action: "return_to_base"},
+		"recharge": {Action: "return_to_base"},
+		"localise": {Action: "locate"},
 	})}
 }
 
@@ -64,7 +66,5 @@ func (s *ServiceVacuum) ExecuterCommande(app Appareil, verbe string, params map[
 }
 
 func (s *ServiceVacuum) MotsReconnus() []string {
-	return append(s.Verbes(),
-		"silencieux", "normal", "turbo", "max", "fort", "doux",
-	)
+	return s.Verbes()
 }

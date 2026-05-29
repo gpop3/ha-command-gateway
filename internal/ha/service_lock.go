@@ -4,11 +4,11 @@ package ha
 type ServiceLock struct{ serviceBase }
 
 func NewServiceLock(c *Client) *ServiceLock {
-	return &ServiceLock{newServiceBase("lock", c, map[string]string{
-		"verrouille":   "lock",
-		"ferme à clé":  "lock",
-		"déverrouille": "unlock",
-		"ouvre":        "open",
+	return &ServiceLock{newServiceBase("lock", c, map[string]VerbeConfig{
+		"verrouille":   {Action: "lock"},
+		"ferme à clé":  {Action: "lock"},
+		"déverrouille": {Action: "unlock"},
+		"ouvre":        {Action: "open"},
 	})}
 }
 

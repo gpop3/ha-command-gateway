@@ -4,12 +4,12 @@ package ha
 type ServiceInputBoolean struct{ serviceBase }
 
 func NewServiceInputBoolean(c *Client) *ServiceInputBoolean {
-	return &ServiceInputBoolean{newServiceBase("input_boolean", c, map[string]string{
-		"active":    "turn_on",
-		"allume":    "turn_on",
-		"désactive": "turn_off",
-		"éteins":    "turn_off",
-		"bascule":   "toggle",
+	return &ServiceInputBoolean{newServiceBase("input_boolean", c, map[string]VerbeConfig{
+		"active":    {Action: "turn_on"},
+		"allume":    {Action: "turn_on"},
+		"désactive": {Action: "turn_off"},
+		"éteins":    {Action: "turn_off"},
+		"bascule":   {Action: "toggle"},
 	})}
 }
 

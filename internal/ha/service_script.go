@@ -14,11 +14,11 @@ import (
 type ServiceScript struct{ serviceBase }
 
 func NewServiceScript(c *Client) *ServiceScript {
-	return &ServiceScript{newServiceBase("script", c, map[string]string{
-		"exécute": "turn_on",
-		"lance":   "turn_on",
-		"démarre": "turn_on",
-		"arrête":  "turn_off",
+	return &ServiceScript{newServiceBase("script", c, map[string]VerbeConfig{
+		"exécute": {Action: "turn_on"},
+		"lance":   {Action: "turn_on"},
+		"démarre": {Action: "turn_on"},
+		"arrête":  {Action: "turn_off"},
 	})}
 }
 

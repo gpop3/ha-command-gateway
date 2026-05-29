@@ -4,7 +4,8 @@ package ha
 type ServiceDefault struct{ serviceBase }
 
 func newServiceDefault(c *Client) *ServiceDefault {
-	return &ServiceDefault{newServiceBase("service_default", c, map[string]string{})}
+	return &ServiceDefault{serviceBase: newServiceBase("service_default", c, map[string]VerbeConfig{})}
+
 }
 
 func (s *ServiceDefault) ScoreDomaine(estAction bool) int {

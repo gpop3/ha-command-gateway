@@ -4,11 +4,11 @@ package ha
 type ServiceScene struct{ serviceBase }
 
 func NewServiceScene(c *Client) *ServiceScene {
-	return &ServiceScene{newServiceBase("scene", c, map[string]string{
-		"active":    "turn_on",
-		"lance":     "turn_on",
-		"applique":  "turn_on",
-		"déclenche": "turn_on",
+	return &ServiceScene{newServiceBase("scene", c, map[string]VerbeConfig{
+		"active":    {Action: "turn_on"},
+		"lance":     {Action: "turn_on"},
+		"applique":  {Action: "turn_on"},
+		"déclenche": {Action: "turn_on"},
 	})}
 }
 

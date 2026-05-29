@@ -4,15 +4,15 @@ package ha
 type ServiceCamera struct{ serviceBase }
 
 func NewServiceCamera(c *Client) *ServiceCamera {
-	return &ServiceCamera{newServiceBase("camera", c, map[string]string{
-		"allume":              "turn_on",
-		"active":              "turn_on",
-		"éteins":              "turn_off",
-		"désactive":           "turn_off",
-		"capture":             "snapshot",
-		"photo":               "snapshot",
-		"active détection":    "enable_motion_detection",
-		"désactive détection": "disable_motion_detection",
+	return &ServiceCamera{newServiceBase("camera", c, map[string]VerbeConfig{
+		"allume":              {Action: "turn_on"},
+		"active":              {Action: "turn_on"},
+		"éteins":              {Action: "turn_off"},
+		"désactive":           {Action: "turn_off"},
+		"capture":             {Action: "snapshot"},
+		"photo":               {Action: "snapshot"},
+		"active détection":    {Action: "enable_motion_detection"},
+		"désactive détection": {Action: "disable_motion_detection"},
 	})}
 }
 

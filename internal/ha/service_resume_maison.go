@@ -10,8 +10,7 @@ import (
 type ServiceResumeMaison struct{ serviceBase }
 
 func NewServiceResumeMaison(c *Client) *ServiceResumeMaison {
-	// Map vide — "résumé", "état" sont des sujets, pas des verbes
-	return &ServiceResumeMaison{newServiceBase("resume_maison", c, map[string]string{})}
+	return &ServiceResumeMaison{newServiceBase("resume_maison", c, map[string]VerbeConfig{})}
 }
 
 func (s *ServiceResumeMaison) ScoreDomaine(_ bool) int { return 20 }
