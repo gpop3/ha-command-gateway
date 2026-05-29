@@ -5,6 +5,7 @@ package voice
 import (
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/utils/text"
 	"io"
 	"log"
 
@@ -90,7 +91,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 		autre := res.Alternatives[i]
 		ecart := meilleur.Confidence - autre.Confidence
 
-		if ecart < EcartMinSecurite && text.normaliser(meilleur.Text) != normaliser(autre.Text) {
+		if ecart < EcartMinSecurite && text.Normaliser(meilleur.Text) != text.Normaliser(autre.Text) {
 			log.Printf("🧠 [Rejeté] Hésitation trop forte entre le choix principal %q (%d) et l'alternative #%d %q (%d)",
 				meilleur.Text, int(meilleur.Confidence),
 				i+1, autre.Text, int(autre.Confidence))
