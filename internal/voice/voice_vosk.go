@@ -86,7 +86,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 
 	if meilleur.Text == "" || meilleur.Confidence < SeuilConfianceMin {
 		log.Printf("🚫 [Rejeté] Confiance trop faible (%d%%) pour : %q",
-			int(meilleur.Confidence*100), meilleur.Text)
+			int(meilleur.Confidence), meilleur.Text)
 		return meilleur, false
 	}
 
@@ -96,8 +96,8 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 
 		if ecart < EcartMinSecurite && normaliser(meilleur.Text) != normaliser(autre.Text) {
 			log.Printf("🧠 [Rejeté] Hésitation trop forte entre le choix principal %q (%d%%) et l'alternative #%d %q (%d%%)",
-				meilleur.Text, int(meilleur.Confidence*100),
-				i+1, autre.Text, int(autre.Confidence*100))
+				meilleur.Text, int(meilleur.Confidence),
+				i+1, autre.Text, int(autre.Confidence))
 			return meilleur, false
 		}
 	}
