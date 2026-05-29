@@ -8,13 +8,10 @@ import (
 	"io"
 	"log"
 
-	"strings"
-
-	vosk "github.com/alphacep/vosk-api/go"
-	"golang.org/x/text/unicode/norm"
-
 	"ha-command-gateway/internal/input"
 	"ha-command-gateway/internal/transcribe"
+
+	vosk "github.com/alphacep/vosk-api/go"
 )
 
 const (
@@ -93,7 +90,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 		autre := res.Alternatives[i]
 		ecart := meilleur.Confidence - autre.Confidence
 
-		if ecart < EcartMinSecurite && normaliser(meilleur.Text) != normaliser(autre.Text) {
+		if ecart < EcartMinSecurite && text.normaliser(meilleur.Text) != normaliser(autre.Text) {
 			log.Printf("🧠 [Rejeté] Hésitation trop forte entre le choix principal %q (%d) et l'alternative #%d %q (%d)",
 				meilleur.Text, int(meilleur.Confidence),
 				i+1, autre.Text, int(autre.Confidence))
@@ -147,15 +144,4 @@ func BoucleVosk(
 			break
 		}
 	}
-}
-
-func normaliser(s string) string {
-	t := norm.NFD.String(s)
-	result := make([]rune, 0, len(t))
-	for _, r := range t {
-		if r < 0x0300 || r > 0x036f {
-			result = append(result, r)
-		}
-	}
-	return strings.ToLower(string(result))
 }

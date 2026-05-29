@@ -6,7 +6,6 @@ import (
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
 	"ha-command-gateway/pkg/types"
-	"log"
 	"regexp"
 	"slices"
 	"sort"
@@ -115,6 +114,101 @@ func (a *Analyseur) GetPieces() []ha.Piece {
 // GenererGrammaire génère la grammaire Vosk :
 func (a *Analyseur) GenererGrammaire() string {
 	unique := make(map[string]bool)
+	var phrases []string
+
+	ajouter := func(phrase string) {
+		phrase = text.Normaliser(strings.TrimSpace(phrase))
+		if phrase != "" && !unique[phrase] {
+			unique[phrase] = true
+			phrases = append(phrases, phrase)
+		}
+	}
+
+	for _, mot := range []string{"assistant", "stop", "pourcentage"} {
+		ajouter(mot)
+	}
+
+	entitesParDomaine := make(map[string][]ha.Appareil)
+	for _, app := range a.catalogue {
+		entitesParDomaine[app.Domain] = append(entitesParDomaine[app.Domain], app)
+	}
+
+	for _, domaine := range ha.ListDomaines() {
+		svc, ok := ha.Lookup(domaine)
+		if !ok {
+			continue
+		}
+
+		var verbes, mots []string
+		for _, v := range svc.Verbes() {
+			verbes = append(verbes, text.Normaliser(v))
+		}
+		for _, m := range svc.MotsReconnus() {
+			mots = append(mots, text.Normaliser(m))
+		}
+
+		entites := entitesParDomaine[domaine]
+		if len(entites) == 0 {
+			continue
+		}
+
+		var nomsEntites []string
+		for _, entite := range entites {
+			nomsEntites = append(nomsEntites, text.Normaliser(entite.FriendlyName))
+		}
+
+		if len(verbes) == 0 {
+			for _, mot := range mots {
+				for _, nom := range nomsEntites {
+					ajouter(mot + " " + nom)
+				}
+			}
+			continue
+		}
+
+		estUnVerbe := make(map[string]bool)
+		for _, v := range verbes {
+			estUnVerbe[v] = true
+		}
+
+		for _, verbe := range verbes {
+			for _, nom := range nomsEntites {
+				ajouter(verbe + " " + nom)
+			}
+		}
+
+		for _, verbe := range verbes {
+			for _, mot := range mots {
+				if !estUnVerbe[mot] {
+					ajouter(verbe + " " + mot)
+				}
+			}
+		}
+
+		for _, verbe := range verbes {
+			for _, nom := range nomsEntites {
+				for _, mot := range mots {
+					if !estUnVerbe[mot] {
+						ajouter(verbe + " " + nom + " " + mot)
+					}
+				}
+			}
+		}
+	}
+
+	for nombre := range conversion.NombresEnLettres {
+		ajouter(nombre)
+	}
+
+	phrases = append(phrases, "[unk]")
+
+	grammarJSON, _ := json.Marshal(phrases)
+	return string(grammarJSON)
+}
+
+/*
+func (a *Analyseur) GenererGrammaire() string {
+	unique := make(map[string]bool)
 	var final []string
 
 	ajouter := func(mot string) {
@@ -209,6 +303,7 @@ func (a *Analyseur) GenererSystemPrompt() string {
 
 	return strings.Join(mots, ", ")
 }
+*/
 
 // ---- Point d'entrée principal ----
 

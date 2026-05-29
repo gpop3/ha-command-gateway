@@ -3,7 +3,10 @@ package text
 import (
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func DistanceLevenshtein(s1, s2 string) int {
@@ -65,4 +68,15 @@ func DetecterHeure(texte string) (time.Time, bool) {
 
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), h, min, 0, 0, time.Local), true
+}
+
+func Normaliser(s string) string {
+	t := norm.NFD.String(s)
+	result := make([]rune, 0, len(t))
+	for _, r := range t {
+		if r < 0x0300 || r > 0x036f {
+			result = append(result, r)
+		}
+	}
+	return strings.ToLower(string(result))
 }
