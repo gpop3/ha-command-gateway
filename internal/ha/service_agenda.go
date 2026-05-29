@@ -78,16 +78,15 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrie
 	}
 
 	slices.SortFunc(tousEvenements, func(a, b EvenementCalendrier) int {
-		timeA, _ := time.Parse(time.RFC3339, a.Start.DateTime)
-		timeB, _ := time.Parse(time.RFC3339, b.Start.DateTime)
+		timeA, errA := time.Parse(time.RFC3339, a.Start.DateTime)
+		timeB, errB := time.Parse(time.RFC3339, b.Start.DateTime)
 
-		if timeA.Before(timeB) {
-			return -1
+		if errA != nil || errB != nil {
+			log.Printf("⚠️ Erreur de parsing dans le tri : errA=%v, errB=%v", errA, errB)
+			log.Printf("Valeurs reçues : A=%q, B=%q", a.Start.DateTime, b.Start.DateTime)
 		}
-		if timeA.After(timeB) {
-			return 1
-		}
-		return 0
+
+		return timeA.Compare(timeB)
 	})
 
 	return tousEvenements
@@ -97,7 +96,6 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 	var params []interface{}
 	var sb strings.Builder
 
-	// 1. Gestion de l'agenda vide
 	if len(tousEvenements) == 0 {
 		switch horizon {
 		case "demain":
@@ -111,7 +109,6 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 		}
 	}
 
-	// 2. Introduction de la période
 	switch horizon {
 	case "demain":
 		sb.WriteString(i18n.T("agenda.demain") + "\n")
@@ -123,7 +120,6 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 		sb.WriteString(i18n.T("agenda.aujourd.hui") + "\n")
 	}
 
-	// 3. Boucle sur les événements
 	for _, e := range tousEvenements {
 		val := e.Start.Value()
 		t, err := time.Parse(time.RFC3339, val)
@@ -146,11 +142,10 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 				heureFormatee = fmt.Sprintf("%d heures %02d", t.Hour(), t.Minute())
 			}
 
-			// Ajout au template : %s (date) %s (heure) %s (titre)
-			sb.WriteString("• %s %s %s à %s : %s\n")
+			sb.WriteString("• %s %d %s à %s : %s\n")
 			params = append(params, jour, t.Day(), nomMois, heureFormatee, e.Summary)
 		} else {
-			sb.WriteString("• %s %s %s : %s (toute la journée)\n")
+			sb.WriteString("• %s %d %s : %s (toute la journée)\n")
 			params = append(params, jour, t.Day(), nomMois, e.Summary)
 		}
 	}

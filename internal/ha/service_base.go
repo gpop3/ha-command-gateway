@@ -196,7 +196,16 @@ func (b *serviceBase) RecupererEtat(app Appareil, dateCible time.Time, params ma
 
 func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom any, dateCible time.Time) types.Message {
 	if !dateCible.IsZero() {
-		heureFormatee := strings.Replace(dateCible.Format("15h04"), "h", " heure ", 1)
+		h := dateCible.Hour()
+		m := dateCible.Minute()
+
+		var heureVoix string
+		if m == 0 {
+			heureVoix = fmt.Sprintf("%d heure", h)
+		} else {
+			heureVoix = fmt.Sprintf("%d heure %d", h, m)
+		}
+
 		return types.Message{
 			SMS: types.MessageDetails{
 				Texte:  i18n.T("message.retour.etat.heure"),
@@ -204,7 +213,7 @@ func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom 
 			},
 			Voix: types.MessageDetails{
 				Texte:  i18n.T("assistant.retour.etat.heure"),
-				Params: []interface{}{app.FriendlyNameExact, heureFormatee, etat.State},
+				Params: []interface{}{app.FriendlyNameExact, heureVoix, etat.State},
 			},
 		}
 	}
