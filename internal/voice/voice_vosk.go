@@ -5,7 +5,6 @@ package voice
 import (
 	"encoding/json"
 	"fmt"
-	"ha-command-gateway/internal/utils/text"
 	"io"
 	"log"
 
@@ -17,7 +16,6 @@ import (
 
 const (
 	SeuilConfianceMin = 100.0
-	EcartMinSecurite  = 5.0
 )
 
 type VoskAlternative struct {
@@ -80,23 +78,15 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 	}
 
 	meilleur := res.Alternatives[0]
-	log.Printf("DEBUG confidence brute : %f", meilleur.Confidence)
-	if meilleur.Text == "" || meilleur.Confidence < SeuilConfianceMin {
-		log.Printf("🚫 [Rejeté] Confiance trop faible (%d) pour : %q",
-			int(meilleur.Confidence), meilleur.Text)
+
+	if meilleur.Text == "" {
+		log.Printf("🔇 [Rejeté] Texte vide (bruit ambiant), score : %d", int(meilleur.Confidence))
 		return meilleur, false
 	}
 
-	for i := 1; i < len(res.Alternatives); i++ {
-		autre := res.Alternatives[i]
-		ecart := meilleur.Confidence - autre.Confidence
-
-		if ecart < EcartMinSecurite && text.Normaliser(meilleur.Text) != text.Normaliser(autre.Text) {
-			log.Printf("🧠 [Rejeté] Hésitation trop forte entre le choix principal %q (%d) et l'alternative #%d %q (%d)",
-				meilleur.Text, int(meilleur.Confidence),
-				i+1, autre.Text, int(autre.Confidence))
-			return meilleur, false
-		}
+	if meilleur.Confidence < SeuilConfianceMin {
+		log.Printf("🚫 [Rejeté] Confiance trop faible (%d) pour : %q", int(meilleur.Confidence), meilleur.Text)
+		return meilleur, false
 	}
 
 	return meilleur, true
