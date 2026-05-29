@@ -78,13 +78,21 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrie
 	}
 
 	slices.SortFunc(tousEvenements, func(a, b EvenementCalendrier) int {
-		timeA, errA := time.Parse(time.RFC3339, a.Start.DateTime)
-		timeB, errB := time.Parse(time.RFC3339, b.Start.DateTime)
+		var timeA, timeB time.Time
 
-		if errA != nil || errB != nil {
-			log.Printf("⚠️ Erreur de parsing dans le tri : errA=%v, errB=%v", errA, errB)
-			log.Printf("Valeurs reçues : A=%q, B=%q", a.Start.DateTime, b.Start.DateTime)
+		if a.Start.DateTime != "" {
+			timeA, _ = time.Parse(time.RFC3339, a.Start.DateTime)
+		} else if a.Start.Date != "" {
+			timeA, _ = time.Parse("2006-01-02", a.Start.Date)
 		}
+
+		if b.Start.DateTime != "" {
+			timeB, _ = time.Parse(time.RFC3339, b.Start.DateTime)
+		} else if b.Start.Date != "" {
+			timeB, _ = time.Parse("2006-01-02", b.Start.Date)
+		}
+
+		log.Printf("Valeurs reçues : A=%v, B=%v", timeA, timeB)
 
 		return timeA.Compare(timeB)
 	})
