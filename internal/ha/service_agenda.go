@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -111,6 +112,19 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (str
 			return i18n.T("agenda.vide.jour"), nil
 		}
 	}
+
+	slices.SortFunc(tousEvenements, func(a, b EvenementCalendrier) int {
+		timeA, _ := time.Parse(time.RFC3339, a.Start.DateTime)
+		timeB, _ := time.Parse(time.RFC3339, b.Start.DateTime)
+
+		if timeA.Before(timeB) {
+			return -1
+		}
+		if timeA.After(timeB) {
+			return 1
+		}
+		return 0
+	})
 
 	var sb strings.Builder
 	switch horizon {
