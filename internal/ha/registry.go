@@ -1,7 +1,5 @@
 package ha
 
-import "fmt"
-
 // registre global des services — peuplé via Register()
 var registre = map[string]Service{}
 
@@ -26,24 +24,4 @@ func ListDomaines() []string {
 		domaines = append(domaines, d)
 	}
 	return domaines
-}
-
-// ExecuterService est le point d'entrée centralisé pour exécuter une action
-// sur n'importe quel domaine enregistré
-func ExecuterService(domaine, entityID, action string, params map[string]interface{}) (string, error) {
-	svc, ok := registre[domaine]
-	if !ok {
-		return "", fmt.Errorf("domaine '%s' non enregistré", domaine)
-	}
-	return svc.Executer(entityID, action, params)
-}
-
-// TrouverActionParVerbe parcourt tous les services enregistrés pour trouver
-func TrouverActionParVerbe(verbe string) (domaine, action string, ok bool) {
-	for d, svc := range registre {
-		if a, found := svc.Verbe(verbe); found {
-			return d, a, true
-		}
-	}
-	return "", "", false
 }

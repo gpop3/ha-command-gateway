@@ -19,10 +19,6 @@ func NewServiceCover(c *Client) *ServiceCover {
 	})}
 }
 
-func (s *ServiceCover) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceCover) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 40

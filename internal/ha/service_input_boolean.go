@@ -13,10 +13,6 @@ func NewServiceInputBoolean(c *Client) *ServiceInputBoolean {
 	})}
 }
 
-func (s *ServiceInputBoolean) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceInputBoolean) ScoreDomaine(estAction bool) int {
 	return -40
 }

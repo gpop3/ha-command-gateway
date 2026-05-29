@@ -22,10 +22,6 @@ func NewServiceScript(c *Client) *ServiceScript {
 	})}
 }
 
-func (s *ServiceScript) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceScript) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 10

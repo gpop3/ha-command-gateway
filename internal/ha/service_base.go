@@ -142,12 +142,7 @@ func (b *serviceBase) ExecuterCommande(app Appareil, verbe string, params map[st
 			break
 		}
 	}
-	return b.Executer(app.EntityID, action, params)
-}
-
-// Executer par défaut — surchargé par chaque service si nécessaire
-func (b *serviceBase) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return b.appeler(entityID, action, params)
+	return b.appeler(app.EntityID, action, params)
 }
 
 func (b *serviceBase) appeler(entityID, action string, params map[string]interface{}) (string, error) {

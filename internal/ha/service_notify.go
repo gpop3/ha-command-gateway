@@ -26,13 +26,6 @@ func NewServiceNotify(c *Client, NotifyDevice string) *ServiceNotify {
 	})}
 }
 
-// Executer implémente Service — entityID = nom de la cible notify
-func (s *ServiceNotify) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	msg, _ := params["message"].(string)
-	titre, _ := params["title"].(string)
-	return s.envoyer(entityID, msg, titre)
-}
-
 // ExecuterCommande envoie une notification via le params "message"
 func (s *ServiceNotify) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
 	msg, _ := params["message"].(string)

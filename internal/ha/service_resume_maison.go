@@ -14,10 +14,6 @@ func NewServiceResumeMaison(c *Client) *ServiceResumeMaison {
 	return &ServiceResumeMaison{newServiceBase("resume_maison", c, map[string]string{})}
 }
 
-func (s *ServiceResumeMaison) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return "", nil
-}
-
 func (s *ServiceResumeMaison) ScoreDomaine(_ bool) int { return 20 }
 
 func (s *ServiceResumeMaison) EstActionParDefaut() bool { return true }

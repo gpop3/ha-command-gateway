@@ -15,10 +15,6 @@ func NewServiceLight(c *Client) *ServiceLight {
 	})}
 }
 
-func (s *ServiceLight) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceLight) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 20

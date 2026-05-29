@@ -16,10 +16,6 @@ func NewServiceTodo(c *Client) *ServiceTodo {
 	})}
 }
 
-func (s *ServiceTodo) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceTodo) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
 	action, ok := s.Verbe(verbe)
 	if !ok {

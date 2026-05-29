@@ -21,10 +21,6 @@ func NewServiceVacuum(c *Client) *ServiceVacuum {
 	})}
 }
 
-func (s *ServiceVacuum) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceVacuum) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 30

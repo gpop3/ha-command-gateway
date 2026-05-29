@@ -20,10 +20,6 @@ func NewServiceFan(c *Client) *ServiceFan {
 	})}
 }
 
-func (s *ServiceFan) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceFan) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 40

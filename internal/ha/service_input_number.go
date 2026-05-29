@@ -15,10 +15,6 @@ func NewServiceInputNumber(c *Client) *ServiceInputNumber {
 	})}
 }
 
-func (s *ServiceInputNumber) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceInputNumber) ScoreDomaine(_ bool) int {
 	return -40
 }

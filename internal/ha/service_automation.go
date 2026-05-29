@@ -13,10 +13,6 @@ func NewServiceAutomation(c *Client) *ServiceAutomation {
 	})}
 }
 
-func (s *ServiceAutomation) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceAutomation) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return -30

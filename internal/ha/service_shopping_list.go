@@ -20,8 +20,8 @@ func NewServiceShoppingList(c *Client) *ServiceShoppingList {
 	})}
 }
 
-// Executer pour shopping_list : pas d'entity_id dans le POST
-func (s *ServiceShoppingList) Executer(entityID, action string, params map[string]interface{}) (string, error) {
+// Executer pour shopping_list
+func (s *ServiceShoppingList) appeler(entityID, action string, params map[string]interface{}) (string, error) {
 	if params == nil {
 		params = map[string]interface{}{}
 	}
@@ -43,7 +43,7 @@ func (s *ServiceShoppingList) ExecuterCommande(app Appareil, verbe string, param
 	if nom, ok := params["item"].(string); ok {
 		haParams["name"] = nom
 	}
-	return s.Executer("", action, haParams)
+	return s.appeler("", action, haParams)
 }
 
 // ExtraireParams délègue aux paramètres universels (pourcentage, température)

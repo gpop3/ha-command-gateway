@@ -23,9 +23,6 @@ type Service interface {
 	// ExtraireParams analyse le texte et retourne les paramètres compris
 	ExtraireParams(texte string) map[string]interface{}
 
-	// Executer appelle l'API HA pour l'action donnée sur l'entité donnée
-	Executer(entityID string, action string, params map[string]interface{}) (string, error)
-
 	// ExecuterCommande est le point d'entrée haut niveau appelé par le NLP
 	ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error)
 

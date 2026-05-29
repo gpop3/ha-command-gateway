@@ -14,10 +14,6 @@ func NewServiceSwitch(c *Client) *ServiceSwitch {
 	})}
 }
 
-func (s *ServiceSwitch) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceSwitch) ScoreDomaine(estAction bool) int {
 	return -40
 }

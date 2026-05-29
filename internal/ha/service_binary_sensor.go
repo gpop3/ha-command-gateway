@@ -8,10 +8,6 @@ func NewServiceBinarySensor(c *Client) *ServiceBinarySensor {
 	return &ServiceBinarySensor{newServiceBase("binary_sensor", c, map[string]string{})}
 }
 
-func (s *ServiceBinarySensor) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return "", nil // lecture seule
-}
-
 func (s *ServiceBinarySensor) ScoreDomaine(estAction bool) int {
 	return 0
 }

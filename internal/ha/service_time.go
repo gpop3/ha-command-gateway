@@ -23,10 +23,6 @@ func NewServiceTime(c *Client) *ServiceTime {
 	return &ServiceTime{newServiceBase("time", c, map[string]string{})}
 }
 
-func (s *ServiceTime) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.repondre(params), nil
-}
-
 func (s *ServiceTime) ScoreDomaine(_ bool) int { return 20 }
 
 func (s *ServiceTime) EstActionParDefaut() bool { return true }

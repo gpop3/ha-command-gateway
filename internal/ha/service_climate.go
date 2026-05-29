@@ -34,10 +34,6 @@ func NewServiceClimate(c *Client) *ServiceClimate {
 	})}
 }
 
-func (s *ServiceClimate) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceClimate) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 0

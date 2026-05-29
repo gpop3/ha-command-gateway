@@ -12,10 +12,6 @@ func NewServiceScene(c *Client) *ServiceScene {
 	})}
 }
 
-func (s *ServiceScene) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceScene) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
 	haParams := map[string]interface{}{}
 	if t, ok := params["transition"].(int); ok {

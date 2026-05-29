@@ -12,10 +12,6 @@ func NewServiceLock(c *Client) *ServiceLock {
 	})}
 }
 
-func (s *ServiceLock) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceLock) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
 	action, ok := s.Verbe(verbe)
 	if !ok {

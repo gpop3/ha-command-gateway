@@ -24,9 +24,6 @@ func NewServiceAgenda(c *Client) *ServiceAgenda {
 func (s *ServiceAgenda) SetCatalogue(catalogue []Appareil) {
 	s.catalogue = catalogue
 }
-func (s *ServiceAgenda) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return "", nil
-}
 
 func (s *ServiceAgenda) ScoreDomaine(_ bool) int { return 80 }
 

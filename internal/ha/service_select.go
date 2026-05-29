@@ -16,10 +16,6 @@ func NewServiceSelect(c *Client) *ServiceSelect {
 	})}
 }
 
-func (s *ServiceSelect) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceSelect) ScoreDomaine(_ bool) int {
 	return -40
 }

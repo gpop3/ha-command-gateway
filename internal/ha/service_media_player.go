@@ -78,10 +78,6 @@ func (s *ServiceMediaPlayer) trouverSourceSpotify(texte string) string {
 	return meilleure
 }
 
-func (s *ServiceMediaPlayer) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceMediaPlayer) ScoreDomaine(estAction bool) int {
 	if estAction {
 		return 40

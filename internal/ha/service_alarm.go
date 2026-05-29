@@ -13,10 +13,6 @@ func NewServiceAlarm(c *Client) *ServiceAlarm {
 	})}
 }
 
-func (s *ServiceAlarm) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
-}
-
 func (s *ServiceAlarm) EstActionParDefaut() bool { return false }
 
 func (s *ServiceAlarm) ExtraireParams(texte string) map[string]interface{} {

@@ -6,15 +6,11 @@ type ServiceNumber struct{ serviceBase }
 
 func NewServiceNumber(c *Client) *ServiceNumber {
 	return &ServiceNumber{newServiceBase("number", c, map[string]string{
-		"règle":     "set_value",
-		"mets":      "set_value",
-		"augmente":  "set_value",
-		"diminue":   "set_value",
+		"règle":    "set_value",
+		"mets":     "set_value",
+		"augmente": "set_value",
+		"diminue":  "set_value",
 	})}
-}
-
-func (s *ServiceNumber) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return s.appeler(entityID, action, params)
 }
 
 func (s *ServiceNumber) ScoreDomaine(_ bool) int {

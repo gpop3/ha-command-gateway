@@ -23,10 +23,6 @@ func NewServiceWeather(c *Client) *ServiceWeather {
 	return &ServiceWeather{newServiceBase("weather", c, map[string]string{})}
 }
 
-func (s *ServiceWeather) Executer(entityID, action string, params map[string]interface{}) (string, error) {
-	return "", nil
-}
-
 func (s *ServiceWeather) ScoreDomaine(estAction bool) int { return 20 }
 
 func (s *ServiceWeather) EstActionParDefaut() bool { return true }
