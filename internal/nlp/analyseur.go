@@ -130,6 +130,8 @@ func (a *Analyseur) GenererGrammaire() string {
 	}
 
 	for _, domaine := range ha.ListDomaines() {
+		log.Printf("DEBUG domaine: %+v", domaine)
+
 		svc, ok := ha.Lookup(domaine)
 		if !ok {
 			continue
