@@ -8,6 +8,7 @@ import (
 	"math"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -123,7 +124,11 @@ func DemarrerFluxMicro(alsaDevice, windowsMic string) (io.ReadCloser, error) {
 		cmd = exec.Command("ffmpeg",
 			"-f", "alsa",
 			"-i", alsaDevice,
-			"-af", "highpass=f=100,compand=points=-80/-80|-5/-5|20/0,afftdn=nr=15",
+			"-af", strings.Join([]string{
+				"highpass=f=150",
+				"afftdn=nr=20:tn=1",
+				"compand=attacks=0.02:decays=0.1:points=-60/-40|-25/-15|-10/-10|0/-10:gain=5",
+			}, ","),
 			"-ar", "16000",
 			"-ac", "1",
 			"-f", "wav",
