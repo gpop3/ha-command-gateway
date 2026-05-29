@@ -83,6 +83,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 
 	meilleur := res.Alternatives[0]
 	log.Printf("DEBUG confidence brute : %f", meilleur.Confidence)
+	log.Printf("DEBUG résultat complet : %s", rec.Result())
 
 	if meilleur.Text == "" || meilleur.Confidence < SeuilConfianceMin {
 		log.Printf("🚫 [Rejeté] Confiance trop faible (%d) pour : %q",
