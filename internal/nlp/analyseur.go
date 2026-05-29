@@ -263,7 +263,7 @@ func (a *Analyseur) GenererGrammaire() string {
 	grammarJSON, _ := json.Marshal(final)
 
 	return string(grammarJSON)
-}
+}*/
 
 // GenererSystemPrompt génère le prompt contextuel pour Whisper
 func (a *Analyseur) GenererSystemPrompt() string {
@@ -303,7 +303,6 @@ func (a *Analyseur) GenererSystemPrompt() string {
 
 	return strings.Join(mots, ", ")
 }
-*/
 
 // ---- Point d'entrée principal ----
 
