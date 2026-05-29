@@ -68,9 +68,6 @@ func Parler(cleEtTexte string, args ...interface{}) {
 		}
 		pcmGlobal = pcm
 	} else {
-		// 2. CAS AVEC CLÉ I18N (Le code de découpage précédent)
-		// Ici, cleEtTexte est considéré comme la CLÉ (ex: "maison.temp.ligne")
-		// On va chercher sa traduction brute (le pattern) depuis ton package locales
 		pattern := recupererPatternDepuisI18n(cleEtTexte)
 
 		if len(args) == 0 {
@@ -132,19 +129,16 @@ func recupererPatternDepuisI18n(cle string) string {
 func obtenirOuGenerer(idCache string, texte string) ([]byte, error) {
 	path := filepath.Join(cacheDir, idCache+".pcm")
 
-	// 1. Tente de lire depuis le cache disque
 	if pcm, err := os.ReadFile(path); err == nil {
 		return pcm, nil
 	}
 
-	// 2. Absent du cache : génération via Piper
 	fmt.Printf("[TTS] Génération [%s] -> %s\n", idCache, texte)
 	pcm, err := genererPCM(texte)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. Sauvegarde dans le cache de manière asynchrone pour ne pas bloquer le flux
 	go func() {
 		_ = os.WriteFile(path, pcm, 0644)
 	}()

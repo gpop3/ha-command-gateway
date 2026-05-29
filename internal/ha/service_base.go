@@ -94,6 +94,12 @@ func (b *serviceBase) ExtraireParams(texte string) map[string]interface{} {
 				return params
 			}
 		}
+		if i+1 < len(mots) && mots[i+1] == "pourcentage" {
+			if v, ok := conversion.LettreVersEntier(mot); ok {
+				params["pourcentage"] = v
+				return params
+			}
+		}
 		if mot == "cent" && i > 0 {
 			if v, ok := conversion.LettreVersEntier(mots[i-1]); ok {
 				params["pourcentage"] = v
