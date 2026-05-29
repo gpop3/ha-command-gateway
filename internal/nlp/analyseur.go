@@ -468,7 +468,7 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 func (a *Analyseur) executerActionMessage(svc ha.Service, app ha.Appareil, verbe string, params map[string]interface{}) types.Message {
 	reponse, err := svc.ExecuterCommande(app, verbe, params)
 
-	if err == nil {
+	if err != nil {
 		return types.Message{
 			SMS: types.MessageDetails{
 				Texte:  i18n.T("erreur.action.parler"),
