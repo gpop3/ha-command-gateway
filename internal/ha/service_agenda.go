@@ -192,21 +192,41 @@ func (s *ServiceAgenda) RecupererEtat(app Appareil, dateCible time.Time, params 
 }
 
 func (s *ServiceAgenda) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom any, dateCible time.Time) types.Message {
+	log.Printf("[Agenda] Début de la conversion d'état en message pour l'appareil: %s", app.FriendlyNameExact)
+
 	if calendrier, ok := etatCustom.(Agenda); ok {
+		log.Printf("[Agenda] Type 'Agenda' détecté avec succès pour l'horizon: '%s' (%d événements)", calendrier.Horizon, len(calendrier.Evenements))
+
 		message, params, err := s.ConstructionMessage(calendrier.Horizon, calendrier.Evenements)
 		if err != nil {
+			log.Printf("⚠️ [Agenda] Erreur lors de la construction du message: %v", err)
 			return types.Message{
 				SMS: types.MessageDetails{
-					Texte:  message,
-					Params: params,
+					Texte:  i18n.T("erreur.lecture.parler"),
+					Params: []interface{}{},
 				},
 				Voix: types.MessageDetails{
-					Texte:  message,
-					Params: params,
+					Texte:  i18n.T("erreur.lecture.parler"),
+					Params: []interface{}{},
 				},
 			}
 		}
+
+		log.Printf("[Agenda] Message construit avec succès. Template: '%s' | Nombre de params: %d", message, len(params))
+
+		return types.Message{
+			SMS: types.MessageDetails{
+				Texte:  message,
+				Params: params,
+			},
+			Voix: types.MessageDetails{
+				Texte:  message,
+				Params: params,
+			},
+		}
 	}
+
+	log.Printf("❌ [Agenda] Échec critique: etatCustom n'est pas de type 'Agenda' (type réel reçu: %T)", etatCustom)
 
 	return types.Message{
 		SMS: types.MessageDetails{
