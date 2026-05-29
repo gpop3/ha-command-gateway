@@ -214,18 +214,15 @@ func traiterEtat(inputText string, etat *int, numeroTel string, analyseur *nlp.A
 			reponse, _, _, isAction, _ := analyseur.AnalyserEtExecuter(inputText)
 			fmt.Println("Réponse SMS :", reponse)
 
-			fmt.Println("--- DEBUG FORMATAGE SMS ---")
-			fmt.Printf("1. Template brut (reponse.SMS.Texte) : '%s'\n", reponse.SMS.Texte)
-			fmt.Printf("2. Nombre de params dans le slice : %d\n", len(reponse.SMS.Params))
-			for idx, val := range reponse.SMS.Params {
-				fmt.Printf("   -> Param [%d] : (Type: %T) | Valeur: '%v'\n", idx, val, val)
-			}
-
 			textMessage := ""
 			if isAction {
 				textMessage = reponse.SMS.Texte
 			} else {
-				textMessage = i18n.T(reponse.SMS.Texte, reponse.SMS.Params...)
+				if i18n.Existe(reponse.SMS.Texte) {
+					textMessage = i18n.T(reponse.SMS.Texte, reponse.SMS.Params...)
+				} else {
+					textMessage = fmt.Sprintf(reponse.SMS.Texte, reponse.SMS.Params...)
+				}
 			}
 
 			if err := gsmClient.EnvoyerSMS(numeroTel, textMessage); err != nil {
