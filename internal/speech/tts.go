@@ -87,7 +87,7 @@ func Parler(cleEtTexte string, args ...interface{}) {
 
 			for i, partie := range partiesStatiques {
 				partie = strings.TrimSpace(partie)
-				if partie != "" {
+				if partie != "" && contientDuTexte(partie) {
 					idComposant := fmt.Sprintf("%s_part_%d", cleEtTexte, i)
 					pcm, err := obtenirOuGenerer(idComposant, partie)
 					if err == nil {
@@ -98,7 +98,7 @@ func Parler(cleEtTexte string, args ...interface{}) {
 				if i < len(args) {
 					valeurStr := fmt.Sprintf("%v", args[i])
 					valeurStr = strings.TrimSpace(valeurStr)
-					if valeurStr != "" {
+					if valeurStr != "" && contientDuTexte(valeurStr) {
 						idDyn := fmt.Sprintf("dyn_%x", md5.Sum([]byte(valeurStr)))
 						pcm, err := obtenirOuGenerer(idDyn, valeurStr)
 						if err == nil {
@@ -113,6 +113,16 @@ func Parler(cleEtTexte string, args ...interface{}) {
 	if len(pcmGlobal) > 0 {
 		jouerPCM(pcmGlobal)
 	}
+}
+
+// contientDuTexte permet de vérifier si le texte contient quelque chose
+func contientDuTexte(s string) bool {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return true
+		}
+	}
+	return false
 }
 
 // Permet de valider si la chaîne passée est une clé présente dans ton fichier de langue
