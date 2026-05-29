@@ -67,3 +67,7 @@ func (s *ServiceTime) repondre(params map[string]interface{}) string {
 		return i18n.T("time.complet", heureStr, minuteStr, joursFR[now.Weekday()], jourNumStr, moisFR[now.Month()-1], anneeStr)
 	}
 }
+
+func (s *ServiceTime) EstDomaineSansEntites() bool {
+	return true
+}

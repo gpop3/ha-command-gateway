@@ -40,4 +40,7 @@ type Service interface {
 	// EstActionParDefaut retourne true si ce service doit toujours passer par
 	// ExecuterCommande même sans verbe d'action détecté.
 	EstActionParDefaut() bool
+
+	// EstDomaineSansEntites retourne si pas d'entité à charger
+	EstDomaineSansEntites() bool
 }

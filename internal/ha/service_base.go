@@ -228,3 +228,7 @@ func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom 
 		},
 	}
 }
+
+func (b *serviceBase) EstDomaineSansEntites() bool {
+	return false
+}

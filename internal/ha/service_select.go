@@ -23,3 +23,7 @@ func (s *ServiceSelect) ScoreDomaine(_ bool) int {
 func (s *ServiceSelect) ExtraireParams(texte string) map[string]interface{} {
 	return s.serviceBase.ExtraireParams(texte)
 }
+
+func (s *ServiceSelect) EstDomaineSansEntites() bool {
+	return true
+}

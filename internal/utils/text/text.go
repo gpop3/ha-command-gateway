@@ -71,6 +71,8 @@ func DetecterHeure(texte string) (time.Time, bool) {
 }
 
 func Normaliser(s string) string {
+	s = strings.ReplaceAll(s, "&", "")
+
 	t := norm.NFD.String(s)
 	result := make([]rune, 0, len(t))
 	for _, r := range t {

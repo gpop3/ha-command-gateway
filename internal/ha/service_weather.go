@@ -144,3 +144,7 @@ func tradCondition(condition string) string {
 	}
 	return condition
 }
+
+func (s *ServiceWeather) EstDomaineSansEntites() bool {
+	return true
+}

@@ -121,3 +121,7 @@ func (s *ServiceClimate) EtatEnMessage(app Appareil, etat *EtatComplet, etatCust
 		},
 	}
 }
+
+func (s *ServiceClimate) EstDomaineSansEntites() bool {
+	return true
+}

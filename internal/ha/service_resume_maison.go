@@ -121,3 +121,7 @@ func (s *ServiceResumeMaison) resumeComplet(appareils []Appareil) string {
 	sb.WriteString(s.resumeTemperatures(appareils))
 	return sb.String()
 }
+
+func (s *ServiceResumeMaison) EstDomaineSansEntites() bool {
+	return true
+}

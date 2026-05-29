@@ -177,6 +177,13 @@ func (a *Analyseur) GenererGrammaire() string {
 			}
 		}
 
+		if svc.EstDomaineSansEntites() {
+			for _, mot := range mots {
+				ajouter(mot)
+			}
+			continue
+		}
+
 		for _, verbe := range verbes {
 			for _, mot := range mots {
 				if !estUnVerbe[mot] {
