@@ -32,10 +32,10 @@ type Service interface {
 	ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error)
 
 	// RecupererEtat est le point d'entrée pour récupérer l'état d'une entité
-	RecupererEtat(app Appareil, dateCible time.Time) (*EtatComplet, error)
+	RecupererEtat(app Appareil, dateCible time.Time, params map[string]interface{}) (*EtatComplet, any, error)
 
 	// EtatEnMessage création des messages de voix et sms
-	EtatEnMessage(app Appareil, etat *EtatComplet, dateCible time.Time) types.Message
+	EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom any, dateCible time.Time) types.Message
 
 	// EstActionParDefaut retourne true si ce service doit toujours passer par
 	// ExecuterCommande même sans verbe d'action détecté.

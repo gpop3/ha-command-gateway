@@ -183,15 +183,18 @@ httpFallback:
 	return fmt.Sprintf("✅ [%s] %s → %s", b.domaine, entityID, action), nil
 }
 
-func (b *serviceBase) RecupererEtat(app Appareil, dateCible time.Time) (*EtatComplet, error) {
+func (b *serviceBase) RecupererEtat(app Appareil, dateCible time.Time, params map[string]interface{}) (*EtatComplet, any, error) {
 	if !dateCible.IsZero() {
-		return b.client.RecupererHistorique(app.EntityID, dateCible)
+		etat, err := b.client.RecupererHistorique(app.EntityID, dateCible)
+
+		return etat, nil, err
 	}
 
-	return b.client.RecupererEtatLive(app.EntityID)
+	etat, err := b.client.RecupererEtatLive(app.EntityID)
+	return etat, nil, err
 }
 
-func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, dateCible time.Time) types.Message {
+func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom any, dateCible time.Time) types.Message {
 	if !dateCible.IsZero() {
 		return types.Message{
 			SMS: types.MessageDetails{

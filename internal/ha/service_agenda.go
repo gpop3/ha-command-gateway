@@ -3,6 +3,7 @@ package ha
 import (
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/pkg/types"
 	"log"
 	"slices"
 	"strings"
@@ -27,7 +28,7 @@ func (s *ServiceAgenda) SetCatalogue(catalogue []Appareil) {
 
 func (s *ServiceAgenda) ScoreDomaine(_ bool) int { return 80 }
 
-func (s *ServiceAgenda) EstActionParDefaut() bool { return true }
+func (s *ServiceAgenda) EstActionParDefaut() bool { return false }
 
 func (s *ServiceAgenda) ExtraireParams(texte string) map[string]interface{} {
 	params := map[string]interface{}{}
@@ -44,27 +45,6 @@ func (s *ServiceAgenda) ExtraireParams(texte string) map[string]interface{} {
 	return params
 }
 
-func (s *ServiceAgenda) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
-	horizon, _ := params["horizon"].(string)
-	now := time.Now()
-	var debut, fin time.Time
-	switch horizon {
-	case "demain":
-		debut = time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.Local)
-		fin = debut.Add(24 * time.Hour)
-	case "semaine":
-		debut = now
-		fin = now.Add(7 * 24 * time.Hour)
-	case "mois":
-		debut = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-		fin = time.Date(now.Year(), now.Month()+1, now.Day(), 0, 0, 0, 0, time.Local)
-	default:
-		debut = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-		fin = debut.Add(24 * time.Hour)
-	}
-	return s.getEvenements(debut, fin, horizon)
-}
-
 func (s *ServiceAgenda) MotsReconnus() []string {
 	return []string{
 		"agenda", "calendrier", "rendez-vous", "prévu", "programme", "événements",
@@ -72,7 +52,7 @@ func (s *ServiceAgenda) MotsReconnus() []string {
 	}
 }
 
-func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (string, error) {
+func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrier {
 	var tousEvenements []EvenementCalendrier
 
 	for _, app := range s.catalogue {
@@ -97,19 +77,6 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (str
 		tousEvenements = append(tousEvenements, events...)
 	}
 
-	if len(tousEvenements) == 0 {
-		switch horizon {
-		case "demain":
-			return i18n.T("agenda.vide.demain"), nil
-		case "semaine":
-			return i18n.T("agenda.vide.semaine"), nil
-		case "mois":
-			return i18n.T("agenda.vide.mois"), nil
-		default:
-			return i18n.T("agenda.vide.jour"), nil
-		}
-	}
-
 	slices.SortFunc(tousEvenements, func(a, b EvenementCalendrier) int {
 		timeA, _ := time.Parse(time.RFC3339, a.Start.DateTime)
 		timeB, _ := time.Parse(time.RFC3339, b.Start.DateTime)
@@ -123,47 +90,132 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time, horizon string) (str
 		return 0
 	})
 
+	return tousEvenements
+}
+
+func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []EvenementCalendrier) (string, []interface{}, error) {
+	var params []interface{}
 	var sb strings.Builder
-	switch horizon {
-	case "demain":
-		sb.WriteString(i18n.T("agenda.demain"))
-	case "semaine":
-		sb.WriteString(i18n.T("agenda.semaine"))
-	case "mois":
-		sb.WriteString(i18n.T("agenda.mois"))
-	default:
-		sb.WriteString(i18n.T("agenda.aujourd.hui"))
+
+	// 1. Gestion de l'agenda vide
+	if len(tousEvenements) == 0 {
+		switch horizon {
+		case "demain":
+			return i18n.T("agenda.vide.demain"), nil, nil
+		case "semaine":
+			return i18n.T("agenda.vide.semaine"), nil, nil
+		case "mois":
+			return i18n.T("agenda.vide.mois"), nil, nil
+		default:
+			return i18n.T("agenda.vide.jour"), nil, nil
+		}
 	}
 
+	// 2. Introduction de la période
+	switch horizon {
+	case "demain":
+		sb.WriteString(i18n.T("agenda.demain") + "\n")
+	case "semaine":
+		sb.WriteString(i18n.T("agenda.semaine") + "\n")
+	case "mois":
+		sb.WriteString(i18n.T("agenda.mois") + "\n")
+	default:
+		sb.WriteString(i18n.T("agenda.aujourd.hui") + "\n")
+	}
+
+	// 3. Boucle sur les événements
 	for _, e := range tousEvenements {
 		val := e.Start.Value()
 		t, err := time.Parse(time.RFC3339, val)
 		if err != nil {
 			t, err = time.Parse("2006-01-02", val)
 		}
+
 		if err != nil {
-			_, err := fmt.Fprintf(&sb, "• %s\n", e.Summary)
-			if err != nil {
-				return "", err
-			}
+			sb.WriteString("• %s\n")
+			params = append(params, e.Summary)
 			continue
 		}
 
 		jour := joursFR[t.Weekday()]
-		date := fmt.Sprintf("%s %d %s", jour, t.Day(), moisFR[t.Month()-1])
+		nomMois := moisFR[t.Month()-1]
 
 		if t.Hour() != 0 || t.Minute() != 0 {
-			_, err := fmt.Fprintf(&sb, "• %s %dh%02d — %s\n", date, t.Hour(), t.Minute(), e.Summary)
-			if err != nil {
-				return "", err
+			heureFormatee := fmt.Sprintf("%d heures", t.Hour())
+			if t.Minute() > 0 {
+				heureFormatee = fmt.Sprintf("%d heures %02d", t.Hour(), t.Minute())
 			}
+
+			// Ajout au template : %s (date) %s (heure) %s (titre)
+			sb.WriteString("• %s %s %s à %s : %s\n")
+			params = append(params, jour, t.Day(), nomMois, heureFormatee, e.Summary)
 		} else {
-			_, err := fmt.Fprintf(&sb, "• %s — %s\n", date, e.Summary)
-			if err != nil {
-				return "", err
+			sb.WriteString("• %s %s %s : %s (toute la journée)\n")
+			params = append(params, jour, t.Day(), nomMois, e.Summary)
+		}
+	}
+
+	return sb.String(), params, nil
+}
+
+type Agenda struct {
+	Horizon    string                `json:"horizon"`
+	Evenements []EvenementCalendrier `json:"evenements"`
+}
+
+func (s *ServiceAgenda) RecupererEtat(app Appareil, dateCible time.Time, params map[string]interface{}) (*EtatComplet, any, error) {
+	horizon, _ := params["horizon"].(string)
+	now := time.Now()
+
+	var reponse Agenda
+	reponse.Horizon = horizon
+	var debut, fin time.Time
+	switch horizon {
+	case "demain":
+		debut = time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.Local)
+		fin = debut.Add(24 * time.Hour)
+	case "semaine":
+		debut = now
+		fin = now.Add(7 * 24 * time.Hour)
+	case "mois":
+		debut = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		fin = time.Date(now.Year(), now.Month()+1, now.Day(), 0, 0, 0, 0, time.Local)
+	default:
+		debut = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		fin = debut.Add(24 * time.Hour)
+	}
+
+	reponse.Evenements = s.getEvenements(debut, fin)
+
+	return nil, reponse, nil
+
+}
+
+func (s *ServiceAgenda) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom any, dateCible time.Time) types.Message {
+	if calendrier, ok := etatCustom.(Agenda); ok {
+		message, params, err := s.ConstructionMessage(calendrier.Horizon, calendrier.Evenements)
+		if err != nil {
+			return types.Message{
+				SMS: types.MessageDetails{
+					Texte:  message,
+					Params: params,
+				},
+				Voix: types.MessageDetails{
+					Texte:  message,
+					Params: params,
+				},
 			}
 		}
 	}
 
-	return sb.String(), nil
+	return types.Message{
+		SMS: types.MessageDetails{
+			Texte:  i18n.T("erreur.lecture.parler"),
+			Params: []interface{}{},
+		},
+		Voix: types.MessageDetails{
+			Texte:  i18n.T("erreur.lecture.parler"),
+			Params: []interface{}{},
+		},
+	}
 }

@@ -249,7 +249,7 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*types.Message, string, bo
 
 		return &etat, verbe, true, estAction, &meilleurMatch
 	}
-	etat := a.lireEtatMessage(svc, meilleurMatch, nettoye)
+	etat := a.lireEtatMessage(svc, meilleurMatch, nettoye, params)
 	return &etat, verbe, true, false, &meilleurMatch
 }
 
@@ -496,7 +496,7 @@ func (a *Analyseur) executerActionMessage(svc ha.Service, app ha.Appareil, verbe
 // ---- Lecture d'état ----
 
 // lireEtatMessage Lit l'état de l'entité et récupère le message
-func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoye string) types.Message {
+func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoye string, params map[string]interface{}) types.Message {
 	dateCible, demandeHistorique := text.DetecterHeure(texteNettoye)
 
 	var dateParam time.Time
@@ -504,7 +504,7 @@ func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoy
 		dateParam = dateCible
 	}
 
-	etat, err := svc.RecupererEtat(app, dateParam)
+	etat, etatCustom, err := svc.RecupererEtat(app, dateParam, params)
 	if err != nil {
 		return types.Message{
 			SMS: types.MessageDetails{
@@ -518,5 +518,5 @@ func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoy
 		}
 	}
 
-	return svc.EtatEnMessage(app, etat, dateParam)
+	return svc.EtatEnMessage(app, etat, etatCustom, dateParam)
 }
