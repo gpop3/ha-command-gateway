@@ -148,10 +148,14 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 
 		entites := entitesParDomaine[domaine]
+
 		if len(entites) == 0 {
 			if svc.AutoriseMotsSansEntites() {
 				for _, mot := range mots {
 					ajouter(mot)
+				}
+				for _, verbe := range verbes {
+					ajouter(verbe)
 				}
 			}
 			continue
@@ -183,17 +187,9 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 
 		for _, verbe := range verbes {
-			for _, mot := range mots {
-				if !estUnVerbe[mot] {
-					ajouter(verbe + " " + mot)
-				}
-			}
-		}
-
-		for _, verbe := range verbes {
 			for _, nom := range nomsEntites {
 				for _, mot := range mots {
-					if !estUnVerbe[mot] {
+					if verbe != mot && !estUnVerbe[mot] {
 						ajouter(verbe + " " + nom + " " + mot)
 					}
 				}
