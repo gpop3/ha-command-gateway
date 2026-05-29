@@ -100,7 +100,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 	return meilleur, true
 }
 
-func BoucleVosk(stdout io.ReadCloser, rec *vosk.Recognizer, canal chan<- input.Commande, etat Etat) {
+func BoucleVosk(stdout io.Reader, rec *vosk.Recognizer, canal chan<- input.Commande, etat Etat) {
 	buf := make([]byte, 4096)
 
 	for {
