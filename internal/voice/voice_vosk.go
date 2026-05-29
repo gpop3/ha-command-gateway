@@ -83,8 +83,6 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 
 	meilleur := res.Alternatives[0]
 	log.Printf("DEBUG confidence brute : %f", meilleur.Confidence)
-	log.Printf("DEBUG résultat complet : %s", rec.Result())
-
 	if meilleur.Text == "" || meilleur.Confidence < SeuilConfianceMin {
 		log.Printf("🚫 [Rejeté] Confiance trop faible (%d) pour : %q",
 			int(meilleur.Confidence), meilleur.Text)
@@ -124,6 +122,7 @@ func BoucleVosk(
 					log.Printf("⚠️ Erreur JSON Vosk : %v", jsonErr)
 					continue
 				}
+				log.Printf("DEBUG résultat complet : %s", rec.Result())
 
 				if cmd, ok := commandeEstFiable(res); ok {
 					log.Printf("✅ [Validé] Commande envoyée : %q (%d)",

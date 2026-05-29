@@ -118,7 +118,7 @@ func (a *Analyseur) GenererGrammaire() string {
 
 	ajouter := func(mot string) {
 		mot = strings.ToLower(strings.TrimSpace(mot))
-		if mot != "" && !unique[mot] {
+		if mot != "" && !unique[mot] && len([]rune(mot)) >= 3 {
 			unique[mot] = true
 			final = append(final, mot)
 		}
