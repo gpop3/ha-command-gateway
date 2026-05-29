@@ -57,7 +57,7 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 	Register(NewServiceAutomation(c))
 	Register(NewServiceInputBoolean(c))
 	Register(NewServiceCamera(c))
-
+	Register(newServiceDefault(c))
 	Register(NewServiceResumeMaison(c))
 	Register(NewServiceTime(c))
 	Register(NewServiceAgenda(c))

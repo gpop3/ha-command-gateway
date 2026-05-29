@@ -99,7 +99,7 @@ func (s *ServiceClimate) MotsReconnus() []string {
 	)
 }
 
-func (s *ServiceClimate) EtatEnMessage(app Appareil, etat *EtatComplet, dateCible time.Time) types.Message {
+func (s *ServiceClimate) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom any, dateCible time.Time) types.Message {
 	var action string
 	switch etat.Attributes.HvacAction {
 	case "heating":

@@ -240,15 +240,19 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*types.Message, string, bo
 	}
 
 	svc, ok := ha.Lookup(meilleurMatch.Domain)
-	if !ok {
-		return nil, verbe, true, estAction, &meilleurMatch
-	}
-
 	if estAction || estActionParDefaut {
+		if !ok {
+			return nil, verbe, true, estAction, &meilleurMatch
+		}
 		etat := a.executerActionMessage(svc, meilleurMatch, verbe, params)
 
 		return &etat, verbe, true, estAction, &meilleurMatch
 	}
+
+	if !ok {
+		svc, _ = ha.Lookup("service_default")
+	}
+
 	etat := a.lireEtatMessage(svc, meilleurMatch, nettoye, params)
 	return &etat, verbe, true, false, &meilleurMatch
 }
