@@ -117,16 +117,18 @@ func BoucleVosk(
 
 		if n > 0 {
 			if rec.AcceptWaveform(buf[:n]) == 1 {
+				raw := rec.Result()
+				log.Printf("DEBUG résultat complet : %s", raw)
+
 				var res VoskResultMultiple
-				if jsonErr := json.Unmarshal([]byte(rec.Result()), &res); jsonErr != nil {
+				if jsonErr := json.Unmarshal([]byte(raw), &res); jsonErr != nil {
 					log.Printf("⚠️ Erreur JSON Vosk : %v", jsonErr)
 					continue
 				}
-				log.Printf("DEBUG résultat complet : %s", rec.Result())
 
 				if cmd, ok := commandeEstFiable(res); ok {
 					log.Printf("✅ [Validé] Commande envoyée : %q (%d)",
-						cmd.Text, int(cmd.Confidence*100))
+						cmd.Text, int(cmd.Confidence))
 
 					canal <- input.Commande{
 						Texte: cmd.Text,
