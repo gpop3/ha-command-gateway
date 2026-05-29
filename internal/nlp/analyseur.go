@@ -6,7 +6,6 @@ import (
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
 	"ha-command-gateway/pkg/types"
-	"log"
 	"regexp"
 	"slices"
 	"sort"
@@ -503,7 +502,6 @@ func (a *Analyseur) executerActionMessage(svc ha.Service, app ha.Appareil, verbe
 // lireEtatMessage Lit l'état de l'entité et récupère le message
 func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoye string, params map[string]interface{}) types.Message {
 	texteAvecChiffres := conversion.RemplacerMotsParChiffres(texteNettoye)
-	log.Printf("Texte initial: '%s' | Après conversion chiffres: '%s'", texteNettoye, texteAvecChiffres)
 
 	dateCible, demandeHistorique := text.DetecterHeure(texteAvecChiffres)
 	var dateParam time.Time

@@ -137,7 +137,6 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 		return fmt.Errorf("SendSMS après %d tentatives : %w", maxRetries, sendErr)
 	}
 
-	// Attendre confirmation d'envoi (max 10 secondes)
 	for i := 0; i < 10; i++ {
 		time.Sleep(1 * time.Second)
 		result, err := c.call("GetSendSMSResult", nil)
@@ -145,7 +144,7 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 			break
 		}
 		status, _ := result["SendStatus"].(float64)
-		if status == 2 { // SMS_SEND_STATUS_SUCCESS
+		if status == 2 {
 			break
 		}
 		if status == 5 { // SMS_SEND_STATUS_FAILED

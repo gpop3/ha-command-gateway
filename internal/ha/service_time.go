@@ -1,6 +1,7 @@
 package ha
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -52,12 +53,17 @@ func (s *ServiceTime) MotsReconnus() []string {
 func (s *ServiceTime) repondre(params map[string]interface{}) string {
 	now := time.Now()
 	mode, _ := params["mode"].(string)
+	heureStr := fmt.Sprintf("%d", now.Hour())
+	minuteStr := fmt.Sprintf("%02d", now.Minute())
+	jourNumStr := fmt.Sprintf("%d", now.Day())
+	anneeStr := fmt.Sprintf("%d", now.Year())
+
 	switch mode {
 	case "heure":
-		return i18n.T("time.heure", now.Hour(), now.Minute())
+		return i18n.T("time.heure", heureStr, minuteStr)
 	case "date":
-		return i18n.T("time.date", joursFR[now.Weekday()], now.Day(), moisFR[now.Month()-1], now.Year())
+		return i18n.T("time.date", joursFR[now.Weekday()], jourNumStr, moisFR[now.Month()-1], anneeStr)
 	default:
-		return i18n.T("time.complet", now.Hour(), now.Minute(), joursFR[now.Weekday()], now.Day(), moisFR[now.Month()-1], now.Year())
+		return i18n.T("time.complet", heureStr, minuteStr, joursFR[now.Weekday()], jourNumStr, moisFR[now.Month()-1], anneeStr)
 	}
 }

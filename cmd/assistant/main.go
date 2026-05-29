@@ -212,8 +212,6 @@ func traiterEtat(inputText string, etat *int, numeroTel string, analyseur *nlp.A
 	case ModeSmsCommand:
 		if len(texte) > 3 {
 			reponse, _, _, isAction, _ := analyseur.AnalyserEtExecuter(inputText)
-			fmt.Println("Réponse SMS :", reponse)
-
 			textMessage := ""
 			if isAction {
 				textMessage = reponse.SMS.Texte
@@ -225,6 +223,7 @@ func traiterEtat(inputText string, etat *int, numeroTel string, analyseur *nlp.A
 				}
 			}
 
+			fmt.Println("Envoie du SMS :", textMessage)
 			if err := gsmClient.EnvoyerSMS(numeroTel, textMessage); err != nil {
 				log.Printf("❌ Envoi SMS échoué : %v", err)
 			}

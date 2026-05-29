@@ -61,9 +61,9 @@ func init() {
 		"console.prete": "⌨️ Console prête. Tapez une commande :",
 
 		// ---- Heure / Date ----
-		"time.heure":   "🕐 Il est %dh%02d.",
-		"time.date":    "📅 Nous sommes le %s %d %s %d.",
-		"time.complet": "🕐 Il est %dh%02d, le %s %d %s %d.",
+		"time.heure":   "Il est %s heure %s.",
+		"time.date":    "Nous sommes le %s %s %s %s.",
+		"time.complet": "Il est %s heure %s, le %s %s %s %s.",
 
 		// ---- Météo ----
 		"meteo.actuelle":       "🌤️ Météo actuelle : %s, %.0f°C",
