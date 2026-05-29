@@ -3,6 +3,7 @@ package conversion
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // NombresEnLettres mappe les nombres écrits en lettres vers leur valeur entière.
@@ -66,6 +67,24 @@ func MotsVersEntier(mots []string) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// RemplacerMotsParChiffres parcourt la phrase et remplace les mots-nombres par des chiffres
+func RemplacerMotsParChiffres(phrase string) string {
+	mots := strings.Fields(phrase)
+
+	for i, mot := range mots {
+		motNettoye := strings.TrimFunc(mot, func(r rune) bool {
+			return unicode.IsPunct(r)
+		})
+
+		if chiffre, ok := LettreVersEntier(motNettoye); ok {
+			chiffreStr := fmt.Sprintf("%d", chiffre)
+			mots[i] = strings.Replace(mot, motNettoye, chiffreStr, 1)
+		}
+	}
+
+	return strings.Join(mots, " ")
 }
 
 // ChiffreVersLettre remplace les nombres (1-100) dans un nom par leur équivalent textuel.

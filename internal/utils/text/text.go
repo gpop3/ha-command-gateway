@@ -39,7 +39,7 @@ func DistanceLevenshtein(s1, s2 string) int {
 }
 
 func DetecterHeure(texte string) (time.Time, bool) {
-	re := regexp.MustCompile(`(\d{1,2})\s*(?:heures?|h)\s*(\d{2})?`)
+	re := regexp.MustCompile(`(\d{1,2})\s*(?:heure?|h)\s*(\d{2})?`)
 
 	m := re.FindStringSubmatch(texte)
 	if len(m) < 2 {

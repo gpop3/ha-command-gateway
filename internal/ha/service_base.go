@@ -210,7 +210,7 @@ func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom 
 	return types.Message{
 		SMS: types.MessageDetails{
 			Texte:  i18n.T("message.retour.etat"),
-			Params: []interface{}{app.FriendlyNameExact, dateCible.Format("15h04"), etat.State},
+			Params: []interface{}{app.FriendlyNameExact, etat.State},
 		},
 		Voix: types.MessageDetails{
 			Texte:  i18n.T("assistant.retour.etat"),
