@@ -70,7 +70,7 @@ func initVosk(
 	rec.SetGrm(grammaireJSON)
 
 	fmt.Println("🎙️  Vosk prêt.")
-	BoucleVosk(stdout, rec, canal, *etat)
+	BoucleVosk(stdout, rec, canal, etat)
 }
 
 func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
@@ -105,7 +105,7 @@ func BoucleVosk(
 	stdout interface{ Read([]byte) (int, error) },
 	rec *vosk.VoskRecognizer,
 	canal chan<- input.Commande,
-	etat int,
+	etat *int,
 ) {
 	buf := make([]byte, 4096)
 
