@@ -107,10 +107,16 @@ func BoucleVosk(
 		if n > 0 {
 			if EstSilence(buf[:n], 50) {
 				framessilence++
+				if framessilence == maxFramesSilence {
+					log.Printf("🔇 Silence détecté — Vosk en pause")
+				}
 				if framessilence >= maxFramesSilence {
 					continue
 				}
 			} else {
+				if framessilence >= maxFramesSilence {
+					log.Printf("🎤 Son détecté — Vosk reprend")
+				}
 				framessilence = 0
 			}
 
