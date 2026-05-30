@@ -42,7 +42,7 @@ func BoucleDetectionParole(
 		if len(data) >= tailleFenetre {
 			fenetre := data[len(data)-tailleFenetre:]
 
-			if EstSilence(fenetre) {
+			if EstSilence(fenetre, 15) {
 				if compteurParole > 0 {
 					compteurSilence++
 					if compteurSilence >= SeuilSilenceMax {

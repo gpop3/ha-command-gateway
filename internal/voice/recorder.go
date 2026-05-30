@@ -88,8 +88,7 @@ func (r *Recorder) ClearNotAll(taille int) {
 }
 
 // EstSilence retourne true si le RMS du segment est inférieur au seuil
-func EstSilence(audioData []byte) bool {
-	const SeuilBruit = 15
+func EstSilence(audioData []byte, SeuilBruit float64) bool {
 	n := len(audioData) / 2
 	if n == 0 {
 		return true
@@ -101,9 +100,6 @@ func EstSilence(audioData []byte) bool {
 		sum += float64(val) * float64(val)
 	}
 	rms := math.Sqrt(sum / float64(n))
-
-	log.Printf("DEBUG RMS : %.2f (seuil: %d)", rms, SeuilBruit)
-
 	return rms < SeuilBruit
 }
 

@@ -105,7 +105,7 @@ func BoucleVosk(
 		n, err := stdout.Read(buf)
 
 		if n > 0 {
-			if EstSilence(buf[:n]) {
+			if EstSilence(buf[:n], 50) {
 				framessilence++
 				if framessilence >= maxFramesSilence {
 					continue
