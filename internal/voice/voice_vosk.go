@@ -98,11 +98,22 @@ func BoucleVosk(
 	etat *int,
 ) {
 	buf := make([]byte, 4096)
+	framessilence := 0
+	const maxFramesSilence = 50
 
 	for {
 		n, err := stdout.Read(buf)
 
 		if n > 0 {
+			if EstSilence(buf[:n]) {
+				framessilence++
+				if framessilence >= maxFramesSilence {
+					continue
+				}
+			} else {
+				framessilence = 0
+			}
+
 			if rec.AcceptWaveform(buf[:n]) == 1 {
 				raw := rec.Result()
 

@@ -114,7 +114,7 @@ func main() {
 	}()
 
 	fmt.Println("🚀 Assistant prêt (Voix + SMS + Console).")
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
