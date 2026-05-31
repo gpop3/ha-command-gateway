@@ -13,7 +13,6 @@ func EcouterConsole() string {
 	fmt.Println(i18n.T("console.prete"))
 
 	for {
-		// La lecture est bloquante, mais seulement dans cette goroutine
 		text, _ := reader.ReadString('\n')
 		text = strings.TrimSpace(text)
 

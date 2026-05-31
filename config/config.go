@@ -70,6 +70,12 @@ type Config struct {
 
 	// Natural Language Processing (NLP)
 	ActivePreselection bool
+
+	// Features
+	ActiveSms        bool
+	ActiveVoice      bool
+	ActiveServerHttp bool
+	ActiveConsole    bool
 }
 
 // Load charge la config depuis les variables d'environnement, avec des valeurs par défaut
@@ -143,6 +149,12 @@ func Load() *Config {
 
 		// NLP
 		ActivePreselection: getEnv("ACTIVE_PRESELECTION", "true") == "true",
+
+		// Features
+		ActiveSms:        getEnv("ACTIVE_SMS", "true") == "true",
+		ActiveVoice:      getEnv("ACTIVE_VOICE", "true") == "true",
+		ActiveServerHttp: getEnv("ACTIVE_SERVER_HTTP", "true") == "true",
+		ActiveConsole:    getEnv("ACTIVE_CONSOLE", "true") == "true",
 	}
 
 	// Construction automatique du whisperURL si non fourni

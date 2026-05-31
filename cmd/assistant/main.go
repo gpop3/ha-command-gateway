@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"ha-command-gateway/internal/api"
+	"ha-command-gateway/internal/console"
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/voice"
 	"log"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"ha-command-gateway/config"
-	"ha-command-gateway/internal/console"
 	"ha-command-gateway/internal/ha"
 	_ "ha-command-gateway/internal/i18n/locales"
 	"ha-command-gateway/internal/input"
@@ -30,6 +30,8 @@ const (
 var dernierModeCommand time.Time
 
 func main() {
+	var gsmClientPtr *sms.Client
+
 	cfg := config.Load()
 	i18n.SetLocale(cfg.Lang)
 
@@ -38,80 +40,89 @@ func main() {
 
 	analyseur := nlp.New(haClient, cfg.ActivePreselection)
 
-	if err := speech.Init(cfg.PiperUrl, cfg.AlsaDevice); err != nil {
-		log.Fatalf("Erreur init TTS : %v", err)
-	}
-
 	if err := analyseur.RafraichirCatalogue(); err != nil {
 		log.Fatalf("%s", i18n.T("erreur.ha.connexion", err))
 	}
 	fmt.Println(i18n.T("assistant.catalogue"))
 
-	// Moteur de transcription
-	transcriptMode := resolveTranscriptMode(cfg)
-	engine, err := transcribe.New(transcribe.Config{
-		Mode:         transcriptMode,
-		WhisperURL:   cfg.WhisperURL,
-		SystemPrompt: analyseur.GenererSystemPrompt(),
-		BinPath:      cfg.WhisperBinPath,
-		ModelPath:    cfg.WhisperModelPath,
-		VadModel:     cfg.WhisperVadModel,
-	})
-	if err != nil {
-		log.Fatalf("Erreur init transcripteur : %v", err)
-	}
-
-	// Micro
-	stdout, err := voice.DemarrerFluxMicro(cfg.AlsaDevice, cfg.WindowsMic)
-	if err != nil {
-		log.Fatalf("Erreur démarrage micro : %v", err)
-	}
-
 	etatSms := ModeSmsCommand
 	etat := ModeVeille
 	canalCommandes := make(chan input.Commande, 10)
-	recorder := voice.NewRecorder(32000 * 5)
 
-	// Grammaire Vosk (JSON)
-	grammaireJSON := analyseur.GenererGrammaire()
+	if cfg.ActiveVoice {
+		// TTS
+		if err := speech.Init(cfg.PiperUrl, cfg.AlsaDevice); err != nil {
+			log.Fatalf("Erreur init TTS : %v", err)
+		}
 
-	go voice.BoucleAudio(stdout, recorder, transcriptMode, engine, &etat, canalCommandes, cfg.VoskModelPath, grammaireJSON)
+		// Moteur de transcription
+		transcriptMode := resolveTranscriptMode(cfg)
+		engine, err := transcribe.New(transcribe.Config{
+			Mode:         transcriptMode,
+			WhisperURL:   cfg.WhisperURL,
+			SystemPrompt: analyseur.GenererSystemPrompt(),
+			BinPath:      cfg.WhisperBinPath,
+			ModelPath:    cfg.WhisperModelPath,
+			VadModel:     cfg.WhisperVadModel,
+		})
+		if err != nil {
+			log.Fatalf("Erreur init transcripteur : %v", err)
+		}
 
-	server := api.NewServer(cfg.APIPort)
+		// Flux audio
+		stdout, err := voice.DemarrerFluxMicro(cfg.AlsaDevice, cfg.WindowsMic)
+		if err != nil {
+			log.Fatalf("Erreur démarrage micro : %v", err)
+		}
+		recorder := voice.NewRecorder(32000 * 5)
 
-	var gsmClientPtr *sms.Client
-	gsmClient, err := sms.New(cfg.ModemURL, cfg.ModemPassword, cfg.ModemVerifKey, cfg.ModemXorKey, cfg.ModemFreeKey, cfg.ModemHmacKey, cfg.Whitelist)
-	if err != nil {
-		log.Printf("⚠️ Modem non disponible : %v", err)
-	} else {
-		gsmClientPtr = gsmClient
-		smsChan := make(chan sms.SMS, 10)
-		go gsmClient.EcouterSMS(smsChan)
+		// Boucle audio
+		grammaireJSON := analyseur.GenererGrammaire()
+		go voice.BoucleAudio(stdout, recorder, transcriptMode, engine, &etat, canalCommandes, cfg.VoskModelPath, grammaireJSON)
+	}
+
+	if cfg.ActiveSms {
+		gsmClient, err := sms.New(cfg.ModemURL, cfg.ModemPassword, cfg.ModemVerifKey, cfg.ModemXorKey, cfg.ModemFreeKey, cfg.ModemHmacKey, cfg.Whitelist)
+		if err != nil {
+			log.Printf("⚠️ Modem non disponible : %v", err)
+		} else {
+			gsmClientPtr = gsmClient
+			smsChan := make(chan sms.SMS, 10)
+			go gsmClient.EcouterSMS(smsChan)
+			go func() {
+				for s := range smsChan {
+					canalCommandes <- input.Commande{
+						Texte:     s.Message,
+						Etat:      &etatSms,
+						NumeroTel: s.Numero,
+					}
+				}
+			}()
+		}
+	}
+
+	if cfg.ActiveServerHttp {
+		server := api.NewServer(cfg.APIPort)
+
+		if cfg.ActiveSms {
+			smsService := api.NewSMSService(gsmClientPtr)
+			server.Register(api.NewSMSController(smsService, cfg.APIKey))
+		}
+		server.Start()
+	}
+
+	if cfg.ActiveConsole {
 		go func() {
-			for s := range smsChan {
+			for {
+				text := console.EcouterConsole()
 				canalCommandes <- input.Commande{
-					Texte:     s.Message,
+					Texte:     text,
 					Etat:      &etatSms,
-					NumeroTel: s.Numero,
+					NumeroTel: "",
 				}
 			}
 		}()
 	}
-
-	smsService := api.NewSMSService(gsmClientPtr)
-	server.Register(api.NewSMSController(smsService, cfg.APIKey))
-	server.Start()
-
-	go func() {
-		for {
-			text := console.EcouterConsole()
-			canalCommandes <- input.Commande{
-				Texte:     text,
-				Etat:      &etatSms,
-				NumeroTel: "",
-			}
-		}
-	}()
 
 	fmt.Println("🚀 Assistant prêt (Voix + SMS + Console).")
 	ticker := time.NewTicker(5 * time.Second)
@@ -121,7 +132,7 @@ func main() {
 		select {
 		case commande := <-canalCommandes:
 			if commande.Texte != "" {
-				traiterEtat(commande.Texte, commande.Etat, commande.NumeroTel, analyseur, gsmClient)
+				traiterEtat(commande.Texte, commande.Etat, commande.NumeroTel, analyseur, gsmClientPtr)
 			}
 		case <-ticker.C:
 			if etat == ModeCommand && time.Since(dernierModeCommand) > 10*time.Second {
