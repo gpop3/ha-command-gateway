@@ -156,12 +156,23 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 }
 
 func (c *Client) EcouterSMS(canal chan<- SMS) {
-	for {
-		idsActuels := map[string]bool{}
+	type SMSASupprimer struct {
+		ContactID int
+		SMSID     int
+		RecuLe    time.Time
+	}
 
+	derniersLus := map[string]bool{}
+	var aSupprimer []SMSASupprimer
+
+	for {
 		time.Sleep(10 * time.Second)
 
+		idsActuels := map[string]bool{}
+
 		contacts, err := c.getSMSContacts()
+		log.Printf("DEBUG getSMSContactsList : %v", contacts)
+
 		if err != nil {
 			log.Printf("⚠️ [SMS] erreur contacts : %v — reconnexion...", err)
 			if loginErr := c.login(); loginErr != nil {
@@ -174,6 +185,8 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 			contactID, _ := contact["ContactId"].(float64)
 
 			messages, err := c.getSMSContent(int(contactID))
+			log.Printf("DEBUG getSMSContentList : %v", messages)
+
 			if err != nil {
 				log.Printf("⚠️ [SMS] erreur contenu contactID=%d : %v — reconnexion...", int(contactID), err)
 				if loginErr := c.login(); loginErr != nil {
@@ -185,11 +198,12 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 			for _, msg := range messages {
 				smsID, _ := msg["SMSId"].(float64)
 				smsType, _ := msg["SMSType"].(float64)
-				key := fmt.Sprintf("%.0f", smsID)
+				smsTime, _ := msg["SMSTime"].(string)
+				key := fmt.Sprintf("%.0f|%s", smsID, smsTime)
 				idsActuels[key] = true
 
-				if !c.derniersLus[key] {
-					c.derniersLus[key] = true
+				if !derniersLus[key] {
+					derniersLus[key] = true
 
 					var numero string
 					switch v := contact["PhoneNumber"].(type) {
@@ -204,13 +218,11 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 					numeroConnu := slices.Contains(c.whitelist, numero)
 					contenu, _ := msg["SMSContent"].(string)
 
-					if smsType != 2 && numeroConnu {
-						if contenu != "" {
-							log.Printf("📱 SMS reçu de %s : %s", numero, msg)
-							canal <- SMS{
-								Numero:  numero,
-								Message: strings.ToLower(contenu),
-							}
+					if smsType != 2 && numeroConnu && contenu != "" {
+						log.Printf("📱 SMS reçu de %s : %s", numero, contenu)
+						canal <- SMS{
+							Numero:  numero,
+							Message: strings.ToLower(contenu),
 						}
 					}
 
@@ -218,28 +230,40 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 						log.Printf("📱 SMS reçu d'un numéro inconnu %s : %s", numero, contenu)
 					}
 
+					aSupprimer = append(aSupprimer, SMSASupprimer{
+						ContactID: int(contactID),
+						SMSID:     int(smsID),
+						RecuLe:    time.Now(),
+					})
 				}
-
-				// Supprimer le SMS après traitement
-				result, err := c.call("DeleteSMS", map[string]interface{}{
-					"DelFlag":   2,
-					"ContactId": int(contactID),
-					"SMSId":     int(smsID),
-				})
-				if err != nil {
-					log.Printf("⚠️ [SMS] suppression échouée SMSId=%.0f : %v", smsID, err)
-				} else {
-					log.Printf("✅ [SMS] supprimé SMSId=%.0f résultat: %v", smsID, result)
-				}
-
 			}
 		}
 
-		for key := range c.derniersLus {
+		for key := range derniersLus {
 			if !idsActuels[key] {
-				delete(c.derniersLus, key)
+				delete(derniersLus, key)
 			}
 		}
+
+		restants := aSupprimer[:0]
+		for _, s := range aSupprimer {
+			if time.Since(s.RecuLe) < 5*time.Minute {
+				restants = append(restants, s)
+				continue
+			}
+			result, err := c.call("DeleteSMS", map[string]interface{}{
+				"DelFlag":   2,
+				"ContactId": s.ContactID,
+				"SMSId":     s.SMSID,
+			})
+			if err != nil {
+				log.Printf("⚠️ [SMS] suppression échouée SMSId=%d : %v — nouvel essai au prochain cycle", s.SMSID, err)
+				restants = append(restants, s)
+			} else {
+				log.Printf("✅ [SMS] supprimé SMSId=%d résultat: %v", s.SMSID, result)
+			}
+		}
+		aSupprimer = restants
 	}
 }
 
