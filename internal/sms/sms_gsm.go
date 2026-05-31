@@ -246,7 +246,7 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 		}
 
 		restants := aSupprimer[:0]
-		for _, s := range aSupprimer {
+		/*for _, s := range aSupprimer {
 			if time.Since(s.RecuLe) < 5*time.Minute {
 				restants = append(restants, s)
 				continue
@@ -262,7 +262,7 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 			} else {
 				log.Printf("✅ [SMS] supprimé SMSId=%d résultat: %v", s.SMSID, result)
 			}
-		}
+		}*/
 		aSupprimer = restants
 	}
 }
