@@ -2,6 +2,7 @@ package sms
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -155,24 +156,34 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 	return nil
 }
 
-func (c *Client) EcouterSMS(canal chan<- SMS) {
-	type SMSASupprimer struct {
-		ContactID int
-		SMSID     int
-		RecuLe    time.Time
+func parseSMSTime(s string) time.Time {
+	t, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.Local)
+	if err != nil {
+		return time.Time{}
 	}
+	return t
+}
 
-	derniersLus := map[string]bool{}
-	var aSupprimer []SMSASupprimer
+func (c *Client) supprimerSMS(contactID, smsID int) {
+	_, err := c.call("DeleteSMS", map[string]interface{}{
+		"DelFlag":   2,
+		"ContactId": contactID,
+		"SMSId":     smsID,
+	})
+	if err != nil {
+		log.Printf("⚠️ [SMS] suppression échouée SMSId=%d : %v", smsID, err)
+	} else {
+		log.Printf("✅ [SMS] supprimé SMSId=%d", smsID)
+	}
+}
+
+func (c *Client) EcouterSMS(canal chan<- SMS) {
+	dejaTraite := map[int]map[float64]struct{}{}
 
 	for {
 		time.Sleep(10 * time.Second)
 
-		idsActuels := map[string]bool{}
-
 		contacts, err := c.getSMSContacts()
-		log.Printf("DEBUG getSMSContactsList : %v", contacts)
-
 		if err != nil {
 			log.Printf("⚠️ [SMS] erreur contacts : %v — reconnexion...", err)
 			if loginErr := c.login(); loginErr != nil {
@@ -183,42 +194,59 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 
 		for _, contact := range contacts {
 			contactID, _ := contact["ContactId"].(float64)
+			cid := int(contactID)
 
-			messages, err := c.getSMSContent(int(contactID))
-			log.Printf("DEBUG getSMSContentList : %v", messages)
-
+			messages, err := c.getSMSContent(cid)
 			if err != nil {
-				log.Printf("⚠️ [SMS] erreur contenu contactID=%d : %v — reconnexion...", int(contactID), err)
+				log.Printf("⚠️ [SMS] erreur contenu contactID=%d : %v — reconnexion...", cid, err)
 				if loginErr := c.login(); loginErr != nil {
 					log.Printf("⚠️ [SMS] reconnexion échouée : %v", loginErr)
 				}
 				continue
 			}
 
+			if len(messages) == 0 {
+				continue
+			}
+
+			var numero string
+			switch v := contact["PhoneNumber"].(type) {
+			case []interface{}:
+				if len(v) > 0 {
+					numero, _ = v[0].(string)
+				}
+			case string:
+				numero = v
+			}
+
+			numeroConnu := slices.Contains(c.whitelist, numero)
+
+			dernier := slices.MaxFunc(messages, func(a, b map[string]interface{}) int {
+				idA, _ := a["SMSId"].(float64)
+				idB, _ := b["SMSId"].(float64)
+				return cmp.Compare(idA, idB)
+			})
+			dernierSMSID, _ := dernier["SMSId"].(float64)
+
+			if dejaTraite[cid] == nil {
+				dejaTraite[cid] = map[float64]struct{}{}
+			}
+
+			idsActuels := map[float64]struct{}{}
+
 			for _, msg := range messages {
 				smsID, _ := msg["SMSId"].(float64)
 				smsType, _ := msg["SMSType"].(float64)
 				smsTime, _ := msg["SMSTime"].(string)
-				key := fmt.Sprintf("%.0f|%s", smsID, smsTime)
-				idsActuels[key] = true
+				contenu, _ := msg["SMSContent"].(string)
 
-				if !derniersLus[key] {
-					derniersLus[key] = true
+				estLeDernier := smsID == dernierSMSID
+				idsActuels[smsID] = struct{}{}
 
-					var numero string
-					switch v := contact["PhoneNumber"].(type) {
-					case []interface{}:
-						if len(v) > 0 {
-							numero, _ = v[0].(string)
-						}
-					case string:
-						numero = v
-					}
+				if _, ok := dejaTraite[cid][smsID]; !ok {
+					dejaTraite[cid][smsID] = struct{}{}
 
-					numeroConnu := slices.Contains(c.whitelist, numero)
-					contenu, _ := msg["SMSContent"].(string)
-
-					if smsType != 2 && numeroConnu && contenu != "" {
+					if smsType != 2 && numeroConnu && contenu != "" && time.Since(parseSMSTime(smsTime)) < 5*time.Minute {
 						log.Printf("📱 SMS reçu de %s : %s", numero, contenu)
 						canal <- SMS{
 							Numero:  numero,
@@ -229,41 +257,19 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 					if !numeroConnu {
 						log.Printf("📱 SMS reçu d'un numéro inconnu %s : %s", numero, contenu)
 					}
+				}
 
-					aSupprimer = append(aSupprimer, SMSASupprimer{
-						ContactID: int(contactID),
-						SMSID:     int(smsID),
-						RecuLe:    time.Now(),
-					})
+				if !estLeDernier {
+					c.supprimerSMS(cid, int(smsID))
+				}
+			}
+
+			for id := range dejaTraite[cid] {
+				if _, ok := idsActuels[id]; !ok {
+					delete(dejaTraite[cid], id)
 				}
 			}
 		}
-
-		for key := range derniersLus {
-			if !idsActuels[key] {
-				delete(derniersLus, key)
-			}
-		}
-
-		restants := aSupprimer[:0]
-		/*for _, s := range aSupprimer {
-			if time.Since(s.RecuLe) < 5*time.Minute {
-				restants = append(restants, s)
-				continue
-			}
-			result, err := c.call("DeleteSMS", map[string]interface{}{
-				"DelFlag":   2,
-				"ContactId": s.ContactID,
-				"SMSId":     s.SMSID,
-			})
-			if err != nil {
-				log.Printf("⚠️ [SMS] suppression échouée SMSId=%d : %v — nouvel essai au prochain cycle", s.SMSID, err)
-				restants = append(restants, s)
-			} else {
-				log.Printf("✅ [SMS] supprimé SMSId=%d résultat: %v", s.SMSID, result)
-			}
-		}*/
-		aSupprimer = restants
 	}
 }
 
