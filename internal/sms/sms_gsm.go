@@ -164,7 +164,7 @@ func parseSMSTime(s string) time.Time {
 	return t
 }
 
-func (c *Client) supprimerSMS(contactID, smsID int) {
+func (c *Client) supprimerSMS(contactID, smsID int) bool {
 	_, err := c.call("DeleteSMS", map[string]interface{}{
 		"DelFlag":   2,
 		"ContactId": contactID,
@@ -172,8 +172,10 @@ func (c *Client) supprimerSMS(contactID, smsID int) {
 	})
 	if err != nil {
 		log.Printf("⚠️ [SMS] suppression échouée SMSId=%d : %v", smsID, err)
+		return false
 	} else {
 		log.Printf("✅ [SMS] supprimé SMSId=%d", smsID)
+		return true
 	}
 }
 
@@ -244,8 +246,6 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 				idsActuels[smsID] = struct{}{}
 
 				if _, ok := dejaTraite[cid][smsID]; !ok {
-					dejaTraite[cid][smsID] = struct{}{}
-
 					if smsType != 2 && numeroConnu && contenu != "" && time.Since(parseSMSTime(smsTime)) < 5*time.Minute {
 						log.Printf("📱 SMS reçu de %s : %s", numero, contenu)
 						canal <- SMS{
@@ -260,13 +260,13 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 				}
 
 				if !estLeDernier {
-					c.supprimerSMS(cid, int(smsID))
-				}
-			}
-
-			for id := range dejaTraite[cid] {
-				if _, ok := idsActuels[id]; !ok {
-					delete(dejaTraite[cid], id)
+					if !c.supprimerSMS(cid, int(smsID)) {
+						dejaTraite[cid][smsID] = struct{}{}
+					} else {
+						delete(dejaTraite[cid], smsID)
+					}
+				} else {
+					dejaTraite[cid][smsID] = struct{}{}
 				}
 			}
 		}
