@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python
     python3 \
     python3-pip \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --break-system-packages --no-cache-dir "piper-tts[http] @ https://github.com/OHF-Voice/piper1-gpl/releases/download/v1.4.2/piper_tts-1.4.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl"
