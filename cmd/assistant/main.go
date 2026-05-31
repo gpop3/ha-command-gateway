@@ -213,21 +213,26 @@ func traiterEtat(inputText string, etat *int, numeroTel string, analyseur *nlp.A
 		if len(texte) > 3 {
 			reponse, _, _, isAction, _ := analyseur.AnalyserEtExecuter(inputText)
 			textMessage := ""
-			if isAction {
-				textMessage = reponse.SMS.Texte
-			} else {
-				if i18n.Existe(reponse.SMS.Texte) {
-					textMessage = i18n.T(reponse.SMS.Texte, reponse.SMS.Params...)
+			if reponse != nil {
+				if isAction {
+					textMessage = reponse.SMS.Texte
 				} else {
-					textMessage = fmt.Sprintf(reponse.SMS.Texte, reponse.SMS.Params...)
+					if i18n.Existe(reponse.SMS.Texte) {
+						textMessage = i18n.T(reponse.SMS.Texte, reponse.SMS.Params...)
+					} else {
+						textMessage = fmt.Sprintf(reponse.SMS.Texte, reponse.SMS.Params...)
+					}
 				}
-			}
 
-			fmt.Println("Envoie du SMS :", textMessage)
-			if err := gsmClient.EnvoyerSMS(numeroTel, textMessage); err != nil {
-				log.Printf("❌ Envoi SMS échoué : %v", err)
+				fmt.Println("Envoie du SMS :", textMessage)
+				if err := gsmClient.EnvoyerSMS(numeroTel, textMessage); err != nil {
+					log.Printf("❌ Envoi SMS échoué : %v", err)
+				}
+				fmt.Println("--- En attente ---")
+			} else {
+				fmt.Println("Traitement impossible car une erreur est survenue")
+				fmt.Println("--- En attente ---")
 			}
-			fmt.Println("--- En attente ---")
 		}
 	}
 }
