@@ -1,9 +1,8 @@
 #!/bin/sh
 set -e
 
-VOICES_DIR="/opt/piper-voices"
-MODEL_PATH="${VOICES_DIR}/${PIPER_MODEL_NAME}.onnx"
-CONFIG_PATH="${VOICES_DIR}/${PIPER_MODEL_NAME}.onnx.json"
+MODEL_PATH="${PIPER_DIR}/${SERVER_PIPER_MODEL_NAME}.onnx"
+CONFIG_PATH="${PIPER_DIR}/${SERVER_PIPER_MODEL_NAME}.onnx.json"
 
 if [ -z "$(ls -A "$VOSK_MODEL_PATH" 2>/dev/null)" ]; then
     echo "📥 Le dossier Vosk est vide. Téléchargement du modèle ${VOSK_MODEL_NAME}..."
@@ -22,18 +21,18 @@ else
 fi
 
 if [ "$NO_PIPER" != "true" ] && [ "$NO_PIPER" != "1" ]; then
-    BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/${PIPER_LANG}/${PIPER_VOICE}"
+    BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/${PIPER_SERVER_LANG}/${PIPER_SERVER_VOICE}"
     if [ ! -f "$MODEL_PATH" ]; then
-      echo "📥 Téléchargement du modèle Piper (${PIPER_MODEL_NAME})..."
-      wget -q -O "$MODEL_PATH" "${BASE_URL}/${PIPER_MODEL_NAME}.onnx"
+      echo "📥 Téléchargement du modèle Piper (${PIPER_SERVER_MODEL_NAME})..."
+      wget -q -O "$MODEL_PATH" "${BASE_URL}/${PIPER_SERVER_MODEL_NAME}.onnx"
     fi
 
     if [ ! -f "$CONFIG_PATH" ]; then
       echo "📥 Téléchargement de la configuration du modèle..."
-      wget -q -O "$CONFIG_PATH" "${BASE_URL}/${PIPER_MODEL_NAME}.onnx.json"
+      wget -q -O "$CONFIG_PATH" "${BASE_URL}/${PIPER_SERVER_MODEL_NAME}.onnx.json"
     fi
 
-    echo "🚀 Lancement de Piper avec le modèle : ${PIPER_MODEL_NAME}"
+    echo "🚀 Lancement de Piper avec le modèle : ${PIPER_SERVER_MODEL_NAME}"
     python3 -m piper.http_server \
         --model "$PIPER_MODEL" \
         --port 5000 &

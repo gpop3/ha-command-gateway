@@ -59,9 +59,10 @@ ENV VOSK_MODEL_NAME=vosk-model-small-fr-0.22
 ENV PIPER_BIN=/opt/piper/piper
 ENV PIPER_MODEL=/opt/piper-voices/fr_FR-siwis-medium.onnx
 
-ENV SERVER_PIPER_LANG=fr
-ENV SERVER_PIPER_VOICE=fr_FR/siwis/medium
-ENV SERVER_PIPER_MODEL_NAME=fr_FR-siwis-medium
+ENV PIPER_DIR=/opt/piper-voices
+ENV PIPER_SERVER_LANG=fr
+ENV PIPER_SERVER_VOICE=fr_FR/siwis/medium
+ENV PIPER_SERVER_MODEL_NAME=fr_FR-siwis-medium
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
