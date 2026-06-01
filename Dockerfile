@@ -47,6 +47,7 @@ FROM deps AS final
 
 COPY --from=builder /app/assistant /usr/local/bin/assistant
 RUN mkdir -p /opt/vosk-model
+RUN mkdir -p /opt/piper-voices
 
 WORKDIR /app
 
