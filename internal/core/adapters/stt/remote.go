@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/logx"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"time"
@@ -65,7 +65,7 @@ func (m *moteurRemote) Transcribe(wavData *bytes.Buffer) (string, time.Duration,
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			fmt.Println(err)
+			logx.Error(err)
 		}
 	}(resp.Body)
 
@@ -78,7 +78,7 @@ func (m *moteurRemote) Transcribe(wavData *bytes.Buffer) (string, time.Duration,
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		log.Printf("remote: réponse JSON invalide. Brut : %s", string(respBody))
+		logx.InfoT("stt.remote.reponse.json.invalide", string(respBody))
 		return "", 0, fmt.Errorf("remote: réponse invalide : %w", err)
 	}
 

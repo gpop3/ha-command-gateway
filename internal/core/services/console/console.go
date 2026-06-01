@@ -3,12 +3,11 @@ package console
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"os"
 	"strings"
 
 	"ha-command-gateway/internal/core"
-	"ha-command-gateway/internal/i18n"
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/nlp"
 )
 
@@ -28,7 +27,7 @@ func (s *Service) Nom() string { return "console" }
 
 func (s *Service) Démarrer(ctx context.Context) error {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Println(i18n.T("console.prete"))
+	logx.InfoT("console.prete")
 
 	for {
 		texte, err := reader.ReadString('\n')
@@ -48,7 +47,7 @@ func (s *Service) Démarrer(ctx context.Context) error {
 // traiter analyse la commande et restitue la réponse.
 func (s *Service) traiter(inputText string) {
 	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter(inputText)
-	fmt.Println("Réponse :", reponse)
+	logx.InfoT("console.reponse", reponse)
 
 	if appareil == nil || reponse == nil {
 		if match {

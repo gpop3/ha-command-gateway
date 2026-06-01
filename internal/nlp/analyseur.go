@@ -2,7 +2,6 @@ package nlp
 
 import (
 	"encoding/json"
-	"fmt"
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
 	"ha-command-gateway/pkg/types"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"ha-command-gateway/internal/ha"
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/utils/conversion"
 )
 
@@ -229,65 +229,6 @@ func (a *Analyseur) GenererGrammaire() string {
 	return string(grammarJSON)
 }
 
-/*
-func (a *Analyseur) GenererGrammaire() string {
-	unique := make(map[string]bool)
-	var final []string
-
-	ajouter := func(mot string) {
-		mot = strings.ToLower(strings.TrimSpace(mot))
-		if mot != "" && !unique[mot] && len([]rune(mot)) >= 3 {
-			unique[mot] = true
-			final = append(final, mot)
-		}
-	}
-
-	for _, m := range []string{"assistant", "stop", "pourcentage", "heure"} {
-		ajouter(m)
-	}
-
-	for _, domaine := range ha.ListDomaines() {
-		log.Printf("DEBUG domaine: %+v", domaine)
-
-		svc, ok := ha.Lookup(domaine)
-		if !ok {
-			continue
-		}
-		log.Printf("DEBUG verbes: %+v", svc.Verbes())
-		log.Printf("DEBUG mots: %+v", svc.MotsReconnus())
-		log.Printf("DEBUG catalogue[0]: %+v", a.catalogue[0])
-
-		for _, verbe := range svc.Verbes() {
-			for _, mot := range strings.Fields(verbe) {
-				ajouter(mot)
-			}
-		}
-		for _, m := range svc.MotsReconnus() {
-			for _, mot := range strings.Fields(m) {
-				ajouter(mot)
-			}
-		}
-	}
-
-	for nombre := range conversion.NombresEnLettres {
-		for _, mot := range strings.Fields(nombre) {
-			ajouter(mot)
-		}
-	}
-
-	for _, app := range a.catalogue {
-		for _, mot := range strings.Fields(strings.ToLower(app.FriendlyName)) {
-			ajouter(mot)
-		}
-	}
-
-	final = append(final, "[unk]")
-
-	grammarJSON, _ := json.Marshal(final)
-
-	return string(grammarJSON)
-}*/
-
 // GenererSystemPrompt génère le prompt contextuel pour Whisper
 func (a *Analyseur) GenererSystemPrompt() string {
 	unique := make(map[string]bool)
@@ -356,10 +297,9 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*types.Message, string, bo
 		}
 	}
 
-	fmt.Printf("DEBUG estAction=%v domaine=%s\n", estAction, meilleurMatch.Domain)
+	logx.DebugT("nlp.estaction.domaine", estAction, meilleurMatch.Domain)
 	estActionParDefaut := false
 	if svc, ok := ha.Lookup(meilleurMatch.Domain); ok && svc.EstActionParDefaut() {
-		fmt.Printf("DEBUG EstActionParDefaut → true\n")
 		estActionParDefaut = true
 	}
 
@@ -460,7 +400,7 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, do
 
 	candidats := []ha.Appareil{}
 	for _, domaine := range domainesCandidats {
-		fmt.Printf("DEBUG: 'Selection du domaine %s' pour la recherche\n", domaine)
+		logx.DebugT("nlp.selection.du.domaine", domaine)
 
 		if entites, ok := a.catalogueIndex[domaine]; ok {
 			candidats = append(candidats, entites...)
@@ -471,7 +411,7 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, do
 		for _, app := range candidats {
 			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
 			if score > meilleurScore {
-				fmt.Printf("DEBUG: Présélection '%s' | Score: %d | Domaine: %s\n", app.FriendlyName, score, app.Domain)
+				logx.DebugT("nlp.preselection.score.domaine", app.FriendlyName, score, app.Domain)
 				meilleurScore = score
 				meilleurMatch = app
 			}
@@ -482,7 +422,7 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, do
 		for _, app := range a.catalogue {
 			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
 			if score > meilleurScore {
-				fmt.Printf("DEBUG: '%s' | Score: %d | Domaine: %s\n", app.FriendlyName, score, app.Domain)
+				logx.DebugT("nlp.score.domaine", app.FriendlyName, score, app.Domain)
 				meilleurScore = score
 				meilleurMatch = app
 			}

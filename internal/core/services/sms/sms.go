@@ -3,12 +3,12 @@ package sms
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"ha-command-gateway/internal/core"
 	"ha-command-gateway/internal/core/adapters/modem"
 	"ha-command-gateway/internal/i18n"
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/nlp"
 )
 
@@ -46,7 +46,7 @@ func (s *Service) Init(ctx context.Context) error {
 		s.cfg.XorKey, s.cfg.FreeKey, s.cfg.HmacKey, s.cfg.Whitelist,
 	)
 	if err != nil {
-		log.Printf("⚠️ [sms] modem non disponible : %v", err)
+		logx.WarnT("sms.modem.indispo", err)
 		return nil
 	}
 	s.client = client
@@ -82,7 +82,7 @@ func (s *Service) traiter(numero, message string) {
 
 	reponse, _, _, isAction, _ := s.analyseur.AnalyserEtExecuter(message)
 	if reponse == nil {
-		log.Println("traitement SMS impossible : analyse en erreur")
+		logx.InfoT("sms.traitement.sms.impossible.analyse")
 		return
 	}
 
@@ -96,9 +96,9 @@ func (s *Service) traiter(numero, message string) {
 		texte = fmt.Sprintf(reponse.SMS.Texte, reponse.SMS.Params...)
 	}
 
-	fmt.Println("Envoi du SMS :", texte)
+	logx.InfoT("sms.envoi", texte)
 	if err := s.Envoyer(numero, texte); err != nil {
-		log.Printf("❌ Envoi SMS échoué : %v", err)
+		logx.ErrorT("sms.envoi.sms.echoue", err)
 	}
 }
 

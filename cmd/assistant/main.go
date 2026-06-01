@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,7 +9,6 @@ import (
 
 	"ha-command-gateway/config"
 	"ha-command-gateway/internal/core"
-	"ha-command-gateway/internal/core/plugins"
 	"ha-command-gateway/internal/core/services/api"
 	"ha-command-gateway/internal/core/services/console"
 	"ha-command-gateway/internal/core/services/sms"
@@ -19,7 +16,9 @@ import (
 	"ha-command-gateway/internal/ha"
 	"ha-command-gateway/internal/i18n"
 	_ "ha-command-gateway/internal/i18n/locales"
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/nlp"
+	"ha-command-gateway/internal/plugins"
 )
 
 func main() {
@@ -31,9 +30,9 @@ func main() {
 
 	analyseur := nlp.New(haClient, cfg.ActivePreselection)
 	if err := analyseur.RafraichirCatalogue(); err != nil {
-		log.Fatalf("%s", i18n.T("erreur.ha.connexion", err))
+		logx.Fatalf("%s", i18n.T("erreur.ha.connexion", err))
 	}
-	fmt.Println(i18n.T("assistant.catalogue"))
+	logx.InfoT("assistant.catalogue")
 
 	bus := core.NewBus(20)
 	mgr := core.New()
@@ -58,6 +57,7 @@ func main() {
 		speaker = voiceSvc
 	}
 
+	// SMS (fournit le port SMSSender)
 	if cfg.ActiveSms {
 		smsSvc := sms.New(sms.Config{
 			ModemURL:  cfg.ModemURL,
@@ -86,7 +86,7 @@ func main() {
 	// Plugins .so (services tiers)
 	env := plugins.Env{Bus: bus, Analyseur: analyseur, Speaker: speaker, Sender: sender}
 	if svcs, err := plugins.Charger("plugins/", env); err != nil {
-		log.Printf("⚠️ plugins : %v", err)
+		logx.WarnT("log.plugins", err)
 	} else {
 		for _, s := range svcs {
 			mgr.Register(s)
@@ -99,15 +99,15 @@ func main() {
 
 	go bus.Lancer(runCtx)
 	if err := mgr.Démarrer(runCtx); err != nil {
-		log.Fatalf("❌ démarrage services : %v", err)
+		logx.Fatalf("❌ démarrage services : %v", err)
 	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Println("🚀 Assistant prêt.")
+	logx.InfoT("assistant.pret")
 	<-sig
-	fmt.Println("\n🛑 Arrêt en cours…")
+	logx.InfoT("assistant.arret")
 	cancel()
 	mgr.Fermer(context.Background())
 }

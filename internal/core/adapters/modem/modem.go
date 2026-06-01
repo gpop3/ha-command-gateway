@@ -5,8 +5,8 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/logx"
 	"io"
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -152,7 +152,7 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 			return fmt.Errorf("envoi SMS échoué")
 		}
 	}
-	log.Printf("📤 SMS envoyé à %s : %s", numero, message)
+	logx.InfoT("sms.envoye", numero, message)
 	return nil
 }
 
@@ -171,10 +171,10 @@ func (c *Client) supprimerSMS(contactID, smsID int) bool {
 		"SMSId":     smsID,
 	})
 	if err != nil {
-		log.Printf("⚠️ [SMS] suppression échouée SMSId=%d : %v", smsID, err)
+		logx.WarnT("modem.sms.suppression.echouee.smsid", smsID, err)
 		return false
 	} else {
-		log.Printf("✅ [SMS] supprimé SMSId=%d", smsID)
+		logx.InfoT("modem.sms.supprime.smsid", smsID)
 		return true
 	}
 }
@@ -187,9 +187,9 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 
 		contacts, err := c.getSMSContacts()
 		if err != nil {
-			log.Printf("⚠️ [SMS] erreur contacts : %v — reconnexion...", err)
+			logx.WarnT("modem.sms.erreur.contacts.reconnexion", err)
 			if loginErr := c.login(); loginErr != nil {
-				log.Printf("⚠️ [SMS] reconnexion échouée : %v", loginErr)
+				logx.WarnT("modem.sms.reconnexion.echouee", loginErr)
 			}
 			continue
 		}
@@ -200,9 +200,9 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 
 			messages, err := c.getSMSContent(cid)
 			if err != nil {
-				log.Printf("⚠️ [SMS] erreur contenu contactID=%d : %v — reconnexion...", cid, err)
+				logx.WarnT("modem.sms.erreur.contenu.contactid", cid, err)
 				if loginErr := c.login(); loginErr != nil {
-					log.Printf("⚠️ [SMS] reconnexion échouée : %v", loginErr)
+					logx.WarnT("modem.sms.reconnexion.echouee.2", loginErr)
 				}
 				continue
 			}
@@ -247,7 +247,7 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 
 				if _, ok := dejaTraite[cid][smsID]; !ok {
 					if smsType != 2 && numeroConnu && contenu != "" && time.Since(parseSMSTime(smsTime)) < 5*time.Minute {
-						log.Printf("📱 SMS reçu de %s : %s", numero, contenu)
+						logx.InfoT("sms.recu", numero, contenu)
 						canal <- SMS{
 							Numero:  numero,
 							Message: strings.ToLower(contenu),
@@ -255,7 +255,7 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 					}
 
 					if !numeroConnu {
-						log.Printf("📱 SMS reçu d'un numéro inconnu %s : %s", numero, contenu)
+						logx.InfoT("modem.sms.recu.un.numero", numero, contenu)
 					}
 				}
 
@@ -417,7 +417,7 @@ func (c *Client) call(method string, params map[string]interface{}) (map[string]
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			fmt.Println(err)
+			logx.Error(err)
 		}
 	}(resp.Body)
 

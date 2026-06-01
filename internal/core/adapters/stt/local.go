@@ -3,6 +3,7 @@ package stt
 import (
 	"bytes"
 	"fmt"
+	"ha-command-gateway/internal/logx"
 	"os"
 	"os/exec"
 	"strings"
@@ -51,6 +52,6 @@ func (m *moteurLocal) Transcribe(wavData *bytes.Buffer) (string, time.Duration, 
 		return "", 0, fmt.Errorf("local: whisper.cpp a échoué : %w\nSortie: %s", err, string(output))
 	}
 
-	fmt.Printf("⏱️ Transcription locale terminée en %v\n", duration)
+	logx.InfoT("stt.transcription.locale.terminee.duration", duration)
 	return strings.TrimSpace(string(output)), duration, nil
 }

@@ -2,10 +2,10 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/joho/godotenv"
+	"ha-command-gateway/internal/logx"
 )
 
 // Config contient tous les paramètres configurables de l'assistant
@@ -82,7 +82,7 @@ type Config struct {
 func Load() *Config {
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("Note: aucun fichier .env trouvé, utilisation des variables système")
+		logx.InfoT("config.note.aucun.fichier.env")
 	}
 
 	c := &Config{

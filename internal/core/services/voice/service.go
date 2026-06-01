@@ -10,6 +10,7 @@ import (
 	"ha-command-gateway/internal/core/adapters/stt"
 	"ha-command-gateway/internal/core/adapters/tts"
 	"ha-command-gateway/internal/input"
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/nlp"
 	"ha-command-gateway/internal/utils/text"
 )
@@ -133,7 +134,7 @@ func (s *Service) Fermer(ctx context.Context) error {
 
 func (s *Service) traiter(inputText string) {
 	texte := strings.ToLower(inputText)
-	fmt.Printf("🎯 Commande vocale : %s\n", texte)
+	logx.InfoT("commande.vocale", texte)
 
 	switch s.etat {
 	case modeVeille:
@@ -149,7 +150,7 @@ func (s *Service) traiter(inputText string) {
 			return
 		}
 
-		fmt.Println("👉 Mot clé détecté !")
+		logx.InfoT("assistant.mot.cle")
 		var filtres []string
 		for _, m := range mots {
 			if text.DistanceLevenshtein(m, "assistant") > 2 {
@@ -188,7 +189,7 @@ func (s *Service) executer(inputText string) bool {
 	} else {
 		s.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
 	}
-	fmt.Println("--- En attente d'un nouvel ordre ---")
+	logx.InfoT("assistant.attente")
 	s.etat = modeVeille
 	return match
 }
@@ -196,7 +197,7 @@ func (s *Service) executer(inputText string) bool {
 // verifierTimeout repasse en veille si la fenêtre de commande a expiré.
 func (s *Service) verifierTimeout() {
 	if s.etat == modeCommand && time.Since(s.dernierMode) > 10*time.Second {
-		fmt.Println("⏱️ Timeout → retour veille")
+		logx.InfoT("assistant.timeout")
 		s.etat = modeVeille
 	}
 }
@@ -219,13 +220,13 @@ func (s *Service) Bip() {
 func resolveTranscriptMode(mode string) stt.Mode {
 	switch stt.Mode(mode) {
 	case stt.ModeRemote:
-		fmt.Println("🌐 Mode transcription : remote (Whisper)")
+		logx.InfoT("transcription.remote")
 		return stt.ModeRemote
 	case stt.ModeLocal:
-		fmt.Println("💻 Mode transcription : local (whisper.cpp)")
+		logx.InfoT("transcription.local")
 		return stt.ModeLocal
 	default:
-		fmt.Println("🎙️  Mode transcription : Vosk local")
+		logx.InfoT("transcription.vosk")
 		return stt.ModeVosk
 	}
 }

@@ -3,10 +3,9 @@
 package voice
 
 import (
-	"fmt"
-
 	"ha-command-gateway/internal/core/adapters/stt"
 	"ha-command-gateway/internal/input"
+	"ha-command-gateway/internal/logx"
 )
 
 func BoucleAudio(
@@ -20,7 +19,7 @@ func BoucleAudio(
 	grammaireJSON string,
 ) {
 	if mode == stt.ModeVosk {
-		fmt.Println("⚠️  Vosk non disponible sur Windows → mode remote")
+		logx.WarnT("vosk.windows")
 	}
 	BoucleDetectionParole(stdout, recorder, engine, etat, canal)
 }

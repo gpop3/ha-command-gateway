@@ -4,14 +4,13 @@ package voice
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
-	"log"
 
 	"ha-command-gateway/internal/core/adapters/stt"
 	"ha-command-gateway/internal/input"
 
 	vosk "github.com/alphacep/vosk-api/go"
+	"ha-command-gateway/internal/logx"
 )
 
 const (
@@ -54,13 +53,13 @@ func initVosk(
 ) {
 	model, err := vosk.NewModel(voskModelPath)
 	if err != nil {
-		log.Fatalf("Vosk: erreur chargement modèle : %v", err)
+		logx.Fatalf("Vosk: erreur chargement modèle : %v", err)
 	}
 	defer model.Free()
 
 	rec, err := vosk.NewRecognizer(model, 16000.0)
 	if err != nil {
-		log.Fatalf("Vosk: erreur init recognizer : %v", err)
+		logx.Fatalf("Vosk: erreur init recognizer : %v", err)
 	}
 	defer rec.Free()
 
@@ -68,7 +67,7 @@ func initVosk(
 	rec.SetWords(1)
 	rec.SetGrm(grammaireJSON)
 
-	fmt.Println("🎙️  Vosk prêt.")
+	logx.InfoT("audio.vosk.pret")
 	BoucleVosk(stdout, rec, canal, etat)
 }
 
@@ -84,7 +83,7 @@ func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
 	}
 
 	if meilleur.Confidence < SeuilConfianceMin {
-		log.Printf("[VOSK] Confiance trop faible (%d) pour : %q", int(meilleur.Confidence), meilleur.Text)
+		logx.InfoT("audio.vosk.confiance.trop.faible", int(meilleur.Confidence), meilleur.Text)
 		return meilleur, false
 	}
 
@@ -107,10 +106,16 @@ func BoucleVosk(
 		if n > 0 {
 			if EstSilence(buf[:n], 50) {
 				framessilence++
+				if framessilence == maxFramesSilence {
+					logx.InfoT("vosk.pause")
+				}
 				if framessilence >= maxFramesSilence {
 					continue
 				}
 			} else {
+				if framessilence >= maxFramesSilence {
+					logx.InfoT("vosk.reprend")
+				}
 				framessilence = 0
 			}
 
@@ -119,7 +124,7 @@ func BoucleVosk(
 
 				var res VoskResultMultiple
 				if jsonErr := json.Unmarshal([]byte(raw), &res); jsonErr != nil {
-					log.Printf("⚠️ Erreur JSON Vosk : %v", jsonErr)
+					logx.WarnT("audio.erreur.json.vosk", jsonErr)
 					continue
 				}
 
@@ -134,9 +139,9 @@ func BoucleVosk(
 
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("⚠️ Fin du stream audio avec erreur : %v", err)
+				logx.WarnT("audio.fin.du.stream.audio", err)
 			} else {
-				log.Println("ℹ️ Fin du stream audio (EOF).")
+				logx.InfoT("vosk.stream.fin")
 			}
 			break
 		}

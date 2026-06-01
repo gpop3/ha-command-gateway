@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"ha-command-gateway/pkg/types"
-	"log"
 	"slices"
 	"strings"
 	"time"
 
 	"ha-command-gateway/internal/i18n"
+	"ha-command-gateway/internal/logx"
 )
 
 type ServiceAgenda struct {
@@ -66,12 +66,12 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrie
 		)
 		body, err := s.client.get(path)
 		if err != nil {
-			log.Printf("❌ [agenda] %s : %v", app.EntityID, err)
+			logx.ErrorT("agenda.agenda", app.EntityID, err)
 			continue
 		}
 		var events []EvenementCalendrier
 		if err := json.Unmarshal(body, &events); err != nil {
-			log.Printf("❌ [agenda] unmarshal %s : %v", app.EntityID, err)
+			logx.ErrorT("agenda.agenda.unmarshal", app.EntityID, err)
 			continue
 		}
 		tousEvenements = append(tousEvenements, events...)
@@ -92,7 +92,7 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrie
 			timeB, _ = time.Parse("2006-01-02", b.Start.Date)
 		}
 
-		log.Printf("Valeurs reçues : A=%v, B=%v", timeA, timeB)
+		logx.InfoT("agenda.valeurs.recues", timeA, timeB)
 
 		return timeA.Compare(timeB)
 	})
@@ -198,7 +198,7 @@ func (s *ServiceAgenda) EtatEnMessage(app Appareil, etat *EtatComplet, etatCusto
 	if calendrier, ok := etatCustom.(Agenda); ok {
 		message, params, err := s.ConstructionMessage(calendrier.Horizon, calendrier.Evenements)
 		if err != nil {
-			log.Printf("⚠️ [Agenda] Erreur lors de la construction du message: %v", err)
+			logx.WarnT("agenda.agenda.erreur.lors.de", err)
 			return types.Message{
 				SMS: types.MessageDetails{
 					Texte:  i18n.T("erreur.lecture.parler"),
@@ -223,7 +223,7 @@ func (s *ServiceAgenda) EtatEnMessage(app Appareil, etat *EtatComplet, etatCusto
 		}
 	}
 
-	log.Printf("❌ [Agenda] Échec critique: etatCustom n'est pas de type 'Agenda' (type réel reçu: %T)", etatCustom)
+	logx.ErrorT("agenda.agenda.echec.critique.etatcustom", etatCustom)
 
 	return types.Message{
 		SMS: types.MessageDetails{
