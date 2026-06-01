@@ -12,7 +12,7 @@ services:
       - dialout
     volumes:
       - ./.env:/app/.env:ro
-      - ./vosk-model:/opt/vosk-model:ro
+      - ./vosk-model:/opt/vosk-model
     environment:
       - ALSA_DEVICE=plughw:CARD=Bar,DEV=0
       - GSM_PORT=/dev/ttyUSB0
