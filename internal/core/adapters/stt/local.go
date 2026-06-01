@@ -1,4 +1,4 @@
-package transcribe
+package stt
 
 import (
 	"bytes"
@@ -30,16 +30,16 @@ func (m *moteurLocal) Transcribe(wavData *bytes.Buffer) (string, time.Duration, 
 	args := []string{
 		"-m", m.modelPath,
 		"-f", tmpFile,
-		"-t", "2",       // threads
-		"-bs", "1",      // beam size
-		"-l", "fr",      // langue
-		"-tp", "0",      // temperature
-		"-nt",           // no timestamps
-		"-np",           // no progress
+		"-t", "2", // threads
+		"-bs", "1", // beam size
+		"-l", "fr", // langue
+		"-tp", "0", // temperature
+		"-nt", // no timestamps
+		"-np", // no progress
 		"--vad",
 		"-vm", m.vadModel,
-		"-vt", "0.3",    // vad threshold
-		"-vp", "500",    // vad padding
+		"-vt", "0.3", // vad threshold
+		"-vp", "500", // vad padding
 		"--prompt", domoPrompt,
 	}
 

@@ -1,0 +1,231 @@
+package voice
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"ha-command-gateway/internal/core"
+	"ha-command-gateway/internal/core/adapters/stt"
+	"ha-command-gateway/internal/core/adapters/tts"
+	"ha-command-gateway/internal/input"
+	"ha-command-gateway/internal/nlp"
+	"ha-command-gateway/internal/utils/text"
+)
+
+// Modes internes de la machine à états vocale (mot-clé de réveil).
+const (
+	modeVeille = iota
+	modeCommand
+)
+
+// Config regroupe les paramètres audio / transcription du service voix.
+type Config struct {
+	PiperUrl   string
+	AlsaDevice string
+	WindowsMic string
+
+	TranscriptionMode string // "vosk" | "remote" | "local"
+	WhisperURL        string
+	WhisperBinPath    string
+	WhisperModelPath  string
+	WhisperVadModel   string
+	VoskModelPath     string
+}
+
+// Service prend en charge le micro, la synthèse vocale (TTS) et la
+// transcription (STT). Il POSSÈDE sa propre logique de traitement (réveil par
+// mot-clé « assistant »), expose la parole via le port core.Speaker, et soumet
+// ses traitements au bus pour qu'ils soient sérialisés avec ceux des autres
+// services.
+type Service struct {
+	cfg       Config
+	analyseur *nlp.Analyseur
+	bus       *core.Bus
+
+	// machine à états (manipulée uniquement sur la goroutine du bus)
+	etat        int
+	dernierMode time.Time
+
+	tts      *tts.Client
+	engine   *stt.Engine
+	mode     stt.Mode
+	stdout   interface{ Read([]byte) (int, error) }
+	closer   interface{ Close() error }
+	rec      *Recorder
+	gram     string
+	etatLoop int // pointeur passé aux boucles audio (valeur ignorée par le traitement)
+}
+
+// New crée le service voix. L'init lourde (TTS, STT, micro) a lieu dans Init.
+func New(cfg Config, analyseur *nlp.Analyseur, bus *core.Bus) *Service {
+	return &Service{cfg: cfg, analyseur: analyseur, bus: bus}
+}
+
+func (s *Service) Nom() string { return "voix" }
+
+// Init monte le TTS, le moteur de transcription et ouvre le flux micro.
+// Une erreur ici stoppe le boot (fail-fast).
+func (s *Service) Init(ctx context.Context) error {
+	client, err := tts.New(s.cfg.PiperUrl, s.cfg.AlsaDevice)
+	if err != nil {
+		return fmt.Errorf("init TTS : %w", err)
+	}
+	s.tts = client
+
+	s.mode = resolveTranscriptMode(s.cfg.TranscriptionMode)
+	engine, err := stt.New(stt.Config{
+		Mode:         s.mode,
+		WhisperURL:   s.cfg.WhisperURL,
+		SystemPrompt: s.analyseur.GenererSystemPrompt(),
+		BinPath:      s.cfg.WhisperBinPath,
+		ModelPath:    s.cfg.WhisperModelPath,
+		VadModel:     s.cfg.WhisperVadModel,
+	})
+	if err != nil {
+		return fmt.Errorf("init transcripteur : %w", err)
+	}
+	s.engine = engine
+
+	flux, err := DemarrerFluxMicro(s.cfg.AlsaDevice, s.cfg.WindowsMic)
+	if err != nil {
+		return fmt.Errorf("démarrage micro : %w", err)
+	}
+	s.stdout = flux
+	s.closer = flux
+	s.rec = NewRecorder(32000 * 5)
+	s.gram = s.analyseur.GenererGrammaire()
+	return nil
+}
+
+// Démarrer lance la boucle audio et relaie chaque transcription au bus, où elle
+// sera traitée par la machine à états vocale.
+func (s *Service) Démarrer(ctx context.Context) error {
+	interne := make(chan input.Commande, 10)
+	go BoucleAudio(s.stdout, s.rec, s.mode, s.engine, &s.etatLoop, interne, s.cfg.VoskModelPath, s.gram)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case cmd := <-interne:
+			texte := cmd.Texte
+			s.bus.Soumettre(func() { s.traiter(texte) })
+		case <-ticker.C:
+			s.bus.Soumettre(s.verifierTimeout)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// Fermer coupe le flux micro, ce qui fait sortir la boucle audio.
+func (s *Service) Fermer(ctx context.Context) error {
+	if s.closer != nil {
+		return s.closer.Close()
+	}
+	return nil
+}
+
+// ---- Traitement vocal (réveil par mot-clé) ----
+
+func (s *Service) traiter(inputText string) {
+	texte := strings.ToLower(inputText)
+	fmt.Printf("🎯 Commande vocale : %s\n", texte)
+
+	switch s.etat {
+	case modeVeille:
+		mots := strings.Fields(texte)
+		motAssistant := false
+		for _, m := range mots {
+			if text.DistanceLevenshtein(m, "assistant") <= 2 {
+				motAssistant = true
+				break
+			}
+		}
+		if !motAssistant {
+			return
+		}
+
+		fmt.Println("👉 Mot clé détecté !")
+		var filtres []string
+		for _, m := range mots {
+			if text.DistanceLevenshtein(m, "assistant") > 2 {
+				filtres = append(filtres, m)
+			}
+		}
+
+		match := false
+		if len(filtres) > 0 {
+			match = s.executer(strings.Join(filtres, " "))
+		}
+		if len(filtres) == 0 || !match {
+			s.Bip()
+			s.dernierMode = time.Now()
+			s.etat = modeCommand
+		}
+
+	case modeCommand:
+		if len(texte) > 3 {
+			s.executer(inputText)
+		}
+	}
+}
+
+// executer analyse la commande et restitue la réponse à la voix.
+func (s *Service) executer(inputText string) bool {
+	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter(inputText)
+	if appareil == nil || reponse == nil {
+		if match {
+			s.Parler("assistant.retour.erreur")
+		} else {
+			s.Parler("assistant.retour.pas.compris")
+		}
+	} else if isAction {
+		s.Parler("assistant.retour.action", verbe, appareil.FriendlyName)
+	} else {
+		s.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
+	}
+	fmt.Println("--- En attente d'un nouvel ordre ---")
+	s.etat = modeVeille
+	return match
+}
+
+// verifierTimeout repasse en veille si la fenêtre de commande a expiré.
+func (s *Service) verifierTimeout() {
+	if s.etat == modeCommand && time.Since(s.dernierMode) > 10*time.Second {
+		fmt.Println("⏱️ Timeout → retour veille")
+		s.etat = modeVeille
+	}
+}
+
+// ---- core.Speaker ----
+
+func (s *Service) Parler(cle string, args ...any) {
+	if s.tts != nil {
+		s.tts.Parler(cle, args...)
+	}
+}
+
+func (s *Service) Bip() {
+	if s.tts != nil {
+		s.tts.Bip()
+	}
+}
+
+// resolveTranscriptMode choisit le mode de transcription selon la config.
+func resolveTranscriptMode(mode string) stt.Mode {
+	switch stt.Mode(mode) {
+	case stt.ModeRemote:
+		fmt.Println("🌐 Mode transcription : remote (Whisper)")
+		return stt.ModeRemote
+	case stt.ModeLocal:
+		fmt.Println("💻 Mode transcription : local (whisper.cpp)")
+		return stt.ModeLocal
+	default:
+		fmt.Println("🎙️  Mode transcription : Vosk local")
+		return stt.ModeVosk
+	}
+}
