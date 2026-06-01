@@ -5,7 +5,6 @@ VOICES_DIR="/opt/piper-voices"
 MODEL_PATH="${VOICES_DIR}/${PIPER_MODEL_NAME}.onnx"
 CONFIG_PATH="${VOICES_DIR}/${PIPER_MODEL_NAME}.onnx.json"
 
-VOSK_MODEL_PATH
 if [ -z "$(ls -A "$VOSK_MODEL_PATH" 2>/dev/null)" ]; then
     echo "📥 Le dossier Vosk est vide. Téléchargement du modèle ${VOSK_MODEL_NAME}..."
 
