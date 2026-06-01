@@ -129,7 +129,8 @@ func init() {
 
 		// ---- Vosk Windows ----
 		"vosk.windows": "⚠️  Vosk non disponible sur Windows → mode remote",
-		// ---- Logs techniques (i18n) ----
+
+		// ---- Logs techniques ----
 		"agenda.agenda": "❌ [agenda] %s : %v",
 		"agenda.agenda.echec.critique.etatcustom":      "❌ [Agenda] Échec critique: etatCustom n'est pas de type 'Agenda' (type réel reçu: %T)",
 		"agenda.agenda.erreur.lors.de":                 "⚠️ [Agenda] Erreur lors de la construction du message: %v",

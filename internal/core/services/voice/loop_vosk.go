@@ -9,8 +9,9 @@ import (
 	"ha-command-gateway/internal/core/adapters/stt"
 	"ha-command-gateway/internal/input"
 
-	vosk "github.com/alphacep/vosk-api/go"
 	"ha-command-gateway/internal/logx"
+
+	vosk "github.com/alphacep/vosk-api/go"
 )
 
 const (
@@ -107,14 +108,14 @@ func BoucleVosk(
 			if EstSilence(buf[:n], 50) {
 				framessilence++
 				if framessilence == maxFramesSilence {
-					logx.InfoT("vosk.pause")
+					logx.DebugT("vosk.pause")
 				}
 				if framessilence >= maxFramesSilence {
 					continue
 				}
 			} else {
 				if framessilence >= maxFramesSilence {
-					logx.InfoT("vosk.reprend")
+					logx.DebugT("vosk.reprend")
 				}
 				framessilence = 0
 			}
