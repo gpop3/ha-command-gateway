@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"log"
+	"ha-command-gateway/internal/logx"
 	"net/http"
 	"strings"
 )
@@ -81,7 +81,7 @@ func (c *SMSController) handleEnvoyerSMS(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	log.Printf("📤 [API] Envoi SMS → %s : %s", req.Numero, req.Message)
+	logx.InfoT("api.api.envoi.sms", req.Numero, req.Message)
 
 	if err := c.service.EnvoyerSMS(req.Numero, req.Message); err != nil {
 		writeJSON(w, http.StatusInternalServerError, reponseJSON{

@@ -2,9 +2,8 @@ package voice
 
 import (
 	"bytes"
-	"fmt"
+	"ha-command-gateway/internal/logx"
 	"io"
-	"log"
 	"math"
 	"os/exec"
 	"runtime"
@@ -142,7 +141,7 @@ func DemarrerFluxMicro(alsaDevice, windowsMic string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	fmt.Println("🎤 Micro activé en continu.")
+	logx.InfoT("audio.micro")
 	return stdout, nil
 }
 
@@ -150,7 +149,7 @@ func DemarrerFluxMicro(alsaDevice, windowsMic string) (io.ReadCloser, error) {
 func SauvegarderAudio(data []byte, filename string) {
 	import_os := func() {
 		// placeholder — appelé via os.WriteFile dans le package main ou nlp
-		log.Printf("SauvegarderAudio: %s (%d octets)", filename, len(data))
+		logx.InfoT("audio.sauvegarderaudio.octets", filename, len(data))
 	}
 	import_os()
 }

@@ -2,13 +2,13 @@ package ha
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"plugin"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"ha-command-gateway/internal/logx"
 )
 
 // LoadServicesFromFile charge les services custom depuis un fichier YAML
@@ -29,16 +29,16 @@ func LoadServicesFromFile(path string, client *Client) error {
 
 	for _, cfg := range configs {
 		if cfg.Domain == "" {
-			log.Printf("⚠️ [services] service sans domaine ignoré")
+			logx.WarnT("plugin.services.service.sans.domaine")
 			continue
 		}
 		// Ne pas écraser un service built-in
 		if _, exists := Lookup(cfg.Domain); exists {
-			log.Printf("⚠️ [services] domaine '%s' déjà enregistré — remplacé", cfg.Domain)
+			logx.WarnT("plugin.services.domaine.deja.enregistre", cfg.Domain)
 		}
 		svc := newServiceCustom(cfg, client)
 		Register(svc)
-		log.Printf("✅ [services] service custom '%s' chargé (%d verbes, %d mots)",
+		logx.InfoT("plugin.services.service.custom.charge",
 			cfg.Domain, len(cfg.Verbs), len(cfg.Words))
 	}
 
@@ -63,24 +63,24 @@ func LoadPlugins(dir string, client *Client) error {
 		path := filepath.Join(dir, entry.Name())
 		p, err := plugin.Open(path)
 		if err != nil {
-			log.Printf("⚠️ [plugin] %s : %v", entry.Name(), err)
+			logx.WarnT("plugin.plugin", entry.Name(), err)
 			continue
 		}
 
 		sym, err := p.Lookup("PluginService")
 		if err != nil {
-			log.Printf("⚠️ [plugin] %s : symbole PluginService manquant", entry.Name())
+			logx.WarnT("plugin.plugin.symbole.pluginservice.manquant", entry.Name())
 			continue
 		}
 
 		svc, ok := sym.(*Service)
 		if !ok {
-			log.Printf("⚠️ [plugin] %s : type invalide", entry.Name())
+			logx.WarnT("plugin.plugin.type.invalide", entry.Name())
 			continue
 		}
 
 		Register(*svc)
-		log.Printf("✅ [plugin] %s chargé → domaine '%s'", entry.Name(), (*svc).Domaine())
+		logx.InfoT("plugin.plugin.charge.domaine", entry.Name(), (*svc).Domaine())
 	}
 	return nil
 }

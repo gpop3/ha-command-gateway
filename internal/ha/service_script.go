@@ -1,7 +1,7 @@
 package ha
 
 import (
-	"log"
+	"ha-command-gateway/internal/logx"
 	"strings"
 )
 
@@ -65,7 +65,7 @@ func (s *ServiceScript) ExtraireParams(texte string) map[string]interface{} {
 			}
 		}
 	}
-	log.Printf("DEBUG ExtraireParams texte: '%s' → params: %v", texte, params)
+	logx.DebugT("script.extraireparams.texte.params", texte, params)
 
 	return params
 }

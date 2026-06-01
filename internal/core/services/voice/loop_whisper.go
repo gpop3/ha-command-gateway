@@ -1,11 +1,11 @@
 package voice
 
 import (
-	"fmt"
 	"time"
 
 	"ha-command-gateway/internal/core/adapters/stt"
 	"ha-command-gateway/internal/input"
+	"ha-command-gateway/internal/logx"
 )
 
 func BoucleDetectionParole(
@@ -46,7 +46,7 @@ func BoucleDetectionParole(
 				if compteurParole > 0 {
 					compteurSilence++
 					if compteurSilence >= SeuilSilenceMax {
-						fmt.Println("🔇 Silence détecté → envoi")
+						logx.InfoT("audio.silence")
 						doitEnvoyer = true
 					}
 				}
@@ -54,10 +54,10 @@ func BoucleDetectionParole(
 				compteurParole++
 				if compteurParole == 1 {
 					recorder.ClearNotAll(12800)
-					fmt.Println("🎤 Parole détectée")
+					logx.InfoT("audio.parole")
 				}
 				if compteurParole >= SeuilParoleMax {
-					fmt.Println("⏱️  Timeout 5s → envoi forcé")
+					logx.InfoT("audio.timeout")
 					doitEnvoyer = true
 				}
 			}
@@ -75,10 +75,10 @@ func BoucleDetectionParole(
 
 			texte, dur, err := engine.Transcribe(wavData)
 			if err != nil {
-				fmt.Printf("❌ Erreur transcription : %v\n", err)
+				logx.ErrorT("audio.erreur", err)
 				continue
 			}
-			fmt.Printf("🎧 Entendu (%v) : %s\n", dur.Round(time.Millisecond), texte)
+			logx.InfoT("audio.entendu", dur.Round(time.Millisecond), texte)
 			if texte != "" {
 				canal <- input.Commande{Texte: texte, Etat: etat}
 			}

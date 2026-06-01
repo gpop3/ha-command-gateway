@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
 	"ha-command-gateway/internal/core"
+	"ha-command-gateway/internal/logx"
 )
 
 // Server est le service HTTP.
@@ -47,7 +47,7 @@ func (s *Server) Démarrer(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("🌐 API HTTP démarrée sur %s", srv.Addr)
+	logx.InfoT("api.demarree", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

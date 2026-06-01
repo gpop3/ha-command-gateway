@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"ha-command-gateway/config"
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/utils/conversion"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -35,7 +35,7 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 
 	ws, err := newWSClient(url, token, timeoutClient)
 	if err != nil {
-		log.Printf("⚠️ [WS] WebSocket indisponible, fallback HTTP : %v", err)
+		logx.WarnT("ha.ws.websocket.indisponible.fallback", err)
 	} else {
 		c.ws = ws
 	}
@@ -63,11 +63,11 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 	Register(NewServiceWeather(c))
 
 	if err := LoadServicesFromFile(cfg.ServicesFile, c); err != nil {
-		log.Printf("⚠️ services.yaml : %v", err)
+		logx.WarnT("ha.services.yaml", err)
 	}
 
 	if err := LoadPlugins("plugins/", c); err != nil {
-		log.Printf("⚠️ plugins : %v", err)
+		logx.WarnT("ha.plugins", err)
 	}
 
 	pieces = ParserPieces(piecesEnv)
@@ -81,7 +81,7 @@ func (c *Client) AttendreWS() {
 		return
 	}
 	if !c.ws.WaitReady(c.timeout * time.Second) {
-		log.Printf("⚠️ [WS] timeout attente cache — fallback HTTP")
+		logx.WarnT("ha.ws.timeout.attente.cache")
 	}
 }
 
@@ -101,7 +101,7 @@ func (c *Client) get(path string) ([]byte, error) {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			fmt.Println(err)
+			logx.Error(err)
 		}
 	}(resp.Body)
 
@@ -113,7 +113,6 @@ func (c *Client) get(path string) ([]byte, error) {
 
 func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 	data, err := json.Marshal(payload)
-	fmt.Println(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +131,7 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			fmt.Println(err)
+			logx.Error(err)
 		}
 	}(resp.Body)
 

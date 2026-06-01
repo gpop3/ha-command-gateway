@@ -3,12 +3,12 @@ package ha
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"ha-command-gateway/internal/logx"
 )
 
 // wsMessage représente un message JSON-RPC WebSocket HA
@@ -111,7 +111,7 @@ func (c *wsClient) readLoop() {
 		if err != nil {
 			if !c.closed {
 				c.invalidCache.Store(false)
-				log.Printf("⚠️ [WS] connexion perdue : %v — reconnexion...", err)
+				logx.WarnT("ws.ws.connexion.perdue.reconnexion", err)
 				go c.reconnect()
 			}
 			return
@@ -119,7 +119,7 @@ func (c *wsClient) readLoop() {
 
 		var msg wsMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("⚠️ [WS] message invalide : %v", err)
+			logx.WarnT("ws.ws.message.invalide", err)
 			continue
 		}
 
@@ -127,14 +127,14 @@ func (c *wsClient) readLoop() {
 		case "auth_required":
 			c.authenticate()
 		case "auth_ok":
-			log.Printf("✅ [WS] authentifié — chargement des états...")
+			logx.InfoT("ws.ws.authentifie.chargement.des")
 			// Réinitialiser le canal ready pour la reconnexion
 			c.readyMu.Lock()
 			c.ready = make(chan struct{})
 			c.readyMu.Unlock()
 			go c.chargerEtatsInitiaux()
 		case "auth_invalid":
-			log.Printf("❌ [WS] authentification échouée — token invalide")
+			logx.ErrorT("ws.ws.authentification.echouee.token")
 			c.closed = true
 			return
 		case "result":
@@ -174,7 +174,7 @@ func (c *wsClient) chargerEtatsInitiaux() {
 	c.mu.Unlock()
 
 	if err != nil {
-		log.Printf("⚠️ [WS] get_states envoi : %v", err)
+		logx.WarnT("ws.ws.get.states.envoi", err)
 		c.invalidCache.Store(true)
 		c.closeReady()
 		return
@@ -190,12 +190,12 @@ func (c *wsClient) chargerEtatsInitiaux() {
 				c.stateCache[etats[i].EntityID] = &etats[i]
 			}
 			c.stateCacheMu.Unlock()
-			log.Printf("✅ [WS] %d états chargés en cache", len(etats))
+			logx.InfoT("ws.ws.etats.charges.en", len(etats))
 		} else {
-			log.Printf("⚠️ [WS] unmarshal états : %v", err)
+			logx.WarnT("ws.ws.unmarshal.etats", err)
 		}
 	case <-time.After(c.timeout * time.Second):
-		log.Printf("⚠️ [WS] timeout get_states — cache vide, fallback HTTP")
+		logx.WarnT("ws.ws.timeout.get.states")
 	}
 
 	// 3. S'abonner aux changements d'état
@@ -208,9 +208,9 @@ func (c *wsClient) chargerEtatsInitiaux() {
 	})
 	c.mu.Unlock()
 	if err != nil {
-		log.Printf("⚠️ [WS] subscribe_events : %v", err)
+		logx.WarnT("ws.ws.subscribe.events", err)
 	} else {
-		log.Printf("✅ [WS] abonné aux changements d'état")
+		logx.InfoT("ws.ws.abonne.aux.changements")
 	}
 
 	// 4. Débloquer les appels en attente
@@ -274,19 +274,19 @@ func (c *wsClient) authenticate() {
 		Type:        "auth",
 		AccessToken: c.token,
 	}); err != nil {
-		log.Printf("❌ [WS] erreur auth : %v", err)
+		logx.ErrorT("ws.ws.erreur.auth", err)
 	}
 }
 
 func (c *wsClient) reconnect() {
 	for {
 		time.Sleep(5 * time.Second)
-		log.Printf("🔄 [WS] tentative de reconnexion...")
+		logx.InfoT("ws.ws.tentative.de.reconnexion")
 		if err := c.connect(); err != nil {
-			log.Printf("⚠️ [WS] reconnexion échouée : %v", err)
+			logx.WarnT("ws.ws.reconnexion.echouee", err)
 			continue
 		}
-		log.Printf("✅ [WS] reconnecté")
+		logx.InfoT("ws.ws.reconnecte")
 		return
 	}
 }

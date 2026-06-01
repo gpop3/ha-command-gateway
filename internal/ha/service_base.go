@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/pkg/types"
-	"log"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/utils/conversion"
 )
 
@@ -173,7 +173,7 @@ func (b *serviceBase) appeler(entityID, action string, params map[string]interfa
 	// Utiliser WebSocket si disponible (plus rapide)
 	if b.client.ws != nil {
 		if err := b.client.ws.CallService(b.domaine, action, target, params); err != nil {
-			log.Printf("⚠️ [WS] CallService échoué, fallback HTTP : %v", err)
+			logx.WarnT("ha.ws.callservice.echoue.fallback", err)
 			// Fallback HTTP
 			goto httpFallback
 		}

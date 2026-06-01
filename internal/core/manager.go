@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 	"errors"
-	"log"
+	"ha-command-gateway/internal/logx"
 )
 
 type Service interface {
@@ -41,7 +41,7 @@ func (m *Manager) Register(s Service) {
 		return
 	}
 	if m.noms[s.Nom()] {
-		log.Printf("⚠️ [core] service '%s' déjà enregistré — ignoré", s.Nom())
+		logx.WarnT("core.core.service.deja.enregistre", s.Nom())
 		return
 	}
 	m.noms[s.Nom()] = true
@@ -60,9 +60,9 @@ func (m *Manager) Démarrer(ctx context.Context) error {
 
 	for _, s := range m.services {
 		go func(s Service) {
-			log.Printf("▶️ service %s démarré", s.Nom())
+			logx.InfoT("core.service.demarre", s.Nom())
 			if err := s.Démarrer(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				log.Printf("⚠️ service %s arrêté : %v", s.Nom(), err)
+				logx.WarnT("core.service.arrete", s.Nom(), err)
 			}
 		}(s)
 	}
@@ -74,7 +74,7 @@ func (m *Manager) Fermer(ctx context.Context) {
 	for _, s := range m.services {
 		if f, ok := s.(Fermable); ok {
 			if err := f.Fermer(ctx); err != nil {
-				log.Printf("⚠️ fermeture %s : %v", s.Nom(), err)
+				logx.WarnT("core.fermeture", s.Nom(), err)
 			}
 		}
 	}

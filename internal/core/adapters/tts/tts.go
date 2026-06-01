@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"ha-command-gateway/internal/i18n"
+	"ha-command-gateway/internal/logx"
 )
 
 const cacheDir = "/tmp/tts-cache"
@@ -37,7 +38,7 @@ func New(piperURL, alsaDevice string) (*Client, error) {
 		http:     &http.Client{Timeout: 30 * time.Second},
 	}
 	_ = os.MkdirAll(cacheDir, 0755)
-	fmt.Println("TTS prêt avec cache par composants.")
+	logx.InfoT("tts.pret")
 	return c, nil
 }
 
@@ -153,7 +154,7 @@ func (c *Client) obtenirOuGenerer(idCache string, texte string) ([]byte, error) 
 		return pcm, nil
 	}
 
-	fmt.Printf("[TTS] Génération [%s] -> %s\n", idCache, texte)
+	logx.InfoT("tts.tts.generation", idCache, texte)
 	pcm, err := c.genererPCM(texte)
 	if err != nil {
 		return nil, err
@@ -208,7 +209,7 @@ func (c *Client) genererPCM(texte string) ([]byte, error) {
 	}
 	defer func(Body io.ReadCloser) {
 		if err := Body.Close(); err != nil {
-			fmt.Println(err)
+			logx.Error(err)
 		}
 	}(resp.Body)
 
@@ -239,6 +240,6 @@ func (c *Client) jouerPCM(pcm []byte) {
 	aplay.Stderr = os.Stderr
 
 	if err := aplay.Run(); err != nil {
-		fmt.Printf("⚠️ [TTS] aplay : %v\n", err)
+		logx.WarnT("tts.tts.aplay", err)
 	}
 }
