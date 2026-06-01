@@ -36,7 +36,7 @@ func (c *SMSController) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sms/send", c.authMiddleware(c.handleEnvoyerSMS))
 }
 
-// authMiddleware vérifie la clé API dans le header Authorization
+// authMiddleware vérifie l'origine locale et la clé API
 func (c *SMSController) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := r.RemoteAddr
@@ -100,8 +100,7 @@ func (c *SMSController) handleEnvoyerSMS(w http.ResponseWriter, r *http.Request)
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	err := json.NewEncoder(w).Encode(v)
-	if err != nil {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
 		return
 	}
 }

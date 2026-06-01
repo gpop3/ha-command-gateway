@@ -8,8 +8,8 @@ import (
 	"io"
 	"log"
 
+	"ha-command-gateway/internal/core/adapters/stt"
 	"ha-command-gateway/internal/input"
-	"ha-command-gateway/internal/transcribe"
 
 	vosk "github.com/alphacep/vosk-api/go"
 )
@@ -30,14 +30,14 @@ type VoskResultMultiple struct {
 func BoucleAudio(
 	stdout interface{ Read([]byte) (int, error) },
 	recorder *Recorder,
-	mode transcribe.Mode,
-	engine *transcribe.Engine,
+	mode stt.Mode,
+	engine *stt.Engine,
 	etat *int,
 	canal chan<- input.Commande,
 	voskModelPath string,
 	grammaireJSON string,
 ) {
-	if mode == transcribe.ModeVosk {
+	if mode == stt.ModeVosk {
 		initVosk(stdout, recorder, etat, canal, voskModelPath, grammaireJSON)
 	} else {
 		BoucleDetectionParole(stdout, recorder, engine, etat, canal)
@@ -107,16 +107,10 @@ func BoucleVosk(
 		if n > 0 {
 			if EstSilence(buf[:n], 50) {
 				framessilence++
-				if framessilence == maxFramesSilence {
-					log.Printf("🔇 Silence détecté — Vosk en pause")
-				}
 				if framessilence >= maxFramesSilence {
 					continue
 				}
 			} else {
-				if framessilence >= maxFramesSilence {
-					log.Printf("🎤 Son détecté — Vosk reprend")
-				}
 				framessilence = 0
 			}
 

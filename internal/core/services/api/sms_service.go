@@ -2,22 +2,23 @@ package api
 
 import (
 	"fmt"
-	"ha-command-gateway/internal/sms"
+
+	"ha-command-gateway/internal/core"
 )
 
-// SMSService gère la logique métier d'envoi de SMS
+// SMSService applique la validation métier avant de déléguer l'envoi au port
 type SMSService struct {
-	client *sms.Client
+	sender core.SMSSender
 }
 
-// NewSMSService crée un nouveau service SMS
-func NewSMSService(client *sms.Client) *SMSService {
-	return &SMSService{client: client}
+// NewSMSService crée le service de validation d'envoi SMS.
+func NewSMSService(sender core.SMSSender) *SMSService {
+	return &SMSService{sender: sender}
 }
 
-// EnvoyerSMS envoie un SMS après validation
+// EnvoyerSMS valide puis envoie.
 func (s *SMSService) EnvoyerSMS(numero, message string) error {
-	if s.client == nil {
+	if s.sender == nil {
 		return fmt.Errorf("modem SMS non disponible")
 	}
 	if numero == "" {
@@ -29,5 +30,5 @@ func (s *SMSService) EnvoyerSMS(numero, message string) error {
 	if len(message) > 160 {
 		return fmt.Errorf("message trop long (%d caractères, max 160)", len(message))
 	}
-	return s.client.EnvoyerSMS(numero, message)
+	return s.sender.Envoyer(numero, message)
 }

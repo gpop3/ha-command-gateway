@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"time"
 
+	"ha-command-gateway/internal/core/adapters/stt"
 	"ha-command-gateway/internal/input"
-	"ha-command-gateway/internal/transcribe"
 )
 
 func BoucleDetectionParole(
 	stdout interface{ Read([]byte) (int, error) },
 	recorder *Recorder,
-	engine *transcribe.Engine,
+	engine *stt.Engine,
 	etat *int,
 	canal chan<- input.Commande,
 ) {

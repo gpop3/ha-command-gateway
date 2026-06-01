@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -22,11 +24,6 @@ jobs:
 
       - name: Install dependencies
         run: go mod download
-
-      - name: Debug build tags
-        run: |
-          go list -tags nvosk -f '{{.GoFiles}}' ha-command-gateway/internal/voice
-          go list -tags nvosk -f '{{.IgnoredGoFiles}}' ha-command-gateway/internal/voice
 
       - name: Vet
         run: |

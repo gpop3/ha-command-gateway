@@ -1,11 +1,10 @@
-package speech
+package tts
 
 import (
 	"bytes"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
-	"ha-command-gateway/internal/i18n"
 	"io"
 	"math"
 	"net/http"
@@ -15,28 +14,31 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ha-command-gateway/internal/i18n"
 )
 
 const cacheDir = "/tmp/tts-cache"
 
-var (
-	mu         sync.Mutex
-	started    bool
-	alsaDev    string
-	piperURL   string
-	httpClient = &http.Client{Timeout: 30 * time.Second}
-)
+// Client encapsule la connexion à Piper, le périphérique ALSA de sortie et le
+// cache PCM par composant.
+type Client struct {
+	mu       sync.Mutex
+	alsaDev  string
+	piperURL string
+	http     *http.Client
+}
 
-// Init configure le TTS
-func Init(piperURL_, alsaDevice string) error {
-	piperURL = piperURL_
-	alsaDev = alsaDevice
-	started = true
-
+// New construit un client TTS prêt à l'emploi.
+func New(piperURL, alsaDevice string) (*Client, error) {
+	c := &Client{
+		alsaDev:  alsaDevice,
+		piperURL: piperURL,
+		http:     &http.Client{Timeout: 30 * time.Second},
+	}
 	_ = os.MkdirAll(cacheDir, 0755)
-
 	fmt.Println("TTS prêt avec cache par composants.")
-	return nil
+	return c, nil
 }
 
 type composant struct {
@@ -54,7 +56,6 @@ func construireComposants(cleEtTexte string, args ...interface{}) []composant {
 		}
 	}
 
-	// Texte brut sans args
 	if len(args) == 0 && (strings.Contains(cleEtTexte, " ") || !estUneCleI18n(cleEtTexte)) {
 		id := fmt.Sprintf("raw_%x", md5.Sum([]byte(cleEtTexte)))
 		ajouter(id, cleEtTexte)
@@ -63,13 +64,11 @@ func construireComposants(cleEtTexte string, args ...interface{}) []composant {
 
 	pattern := recupererPatternDepuisI18n(cleEtTexte)
 
-	// Clé i18n sans args
 	if len(args) == 0 {
 		ajouter(cleEtTexte, pattern)
 		return composants
 	}
 
-	// Clé i18n avec args — découpage en parties statiques + dynamiques
 	format := pattern
 	verbes := []string{"%v", "%s", "%d", "%.1f", "%.0f", "%02d"}
 	for _, v := range verbes {
@@ -93,16 +92,9 @@ func construireComposants(cleEtTexte string, args ...interface{}) []composant {
 	return composants
 }
 
-// Parler prend la clé i18n, le pattern de traduction brute et ses arguments.
-// Exemple : Parler("maison.temp.ligne", "• %s : %s°C\n", "Salon", "22.5")
-// Parler s'adapte automatiquement :
-// - Si cleEtTexte est une clé i18n (ex: "maison.temp.ligne"), elle utilise le pattern et les args.
-// - Si cleEtTexte est une phrase brute (ex: "Attention, la voiture est ouverte"), elle gère le cache par son hash MD5.
-func Parler(cleEtTexte string, args ...interface{}) {
-	if !started {
-		return
-	}
-
+// Parler prend la clé i18n (ou une phrase brute) et ses arguments, puis lit le
+// résultat audio. Exemple : Parler("maison.temp.ligne", "Salon", "22.5").
+func (c *Client) Parler(cleEtTexte string, args ...interface{}) {
 	cleEtTexte = strings.ReplaceAll(cleEtTexte, "\n", " ")
 	cleEtTexte = strings.TrimSpace(cleEtTexte)
 	if cleEtTexte == "" {
@@ -119,37 +111,29 @@ func Parler(cleEtTexte string, args ...interface{}) {
 		err error
 	}
 
-	// Précharge le composant à l'index donné dans un chan
 	precharger := func(idx int) chan resultat {
 		ch := make(chan resultat, 1)
 		go func() {
-			pcm, err := obtenirOuGenerer(composants[idx].id, composants[idx].texte)
+			pcm, err := c.obtenirOuGenerer(composants[idx].id, composants[idx].texte)
 			ch <- resultat{pcm, err}
 		}()
 		return ch
 	}
 
-	// On démarre le chargement du premier composant
 	prochainChan := precharger(0)
-
 	for i := 0; i < len(composants); i++ {
-		// Précharge le suivant pendant qu'on attend le courant
 		var suivantChan chan resultat
 		if i+1 < len(composants) {
 			suivantChan = precharger(i + 1)
 		}
-
-		// Attend et joue le courant
 		res := <-prochainChan
 		if res.err == nil && len(res.pcm) > 0 {
-			jouerPCM(res.pcm)
+			c.jouerPCM(res.pcm)
 		}
-
 		prochainChan = suivantChan
 	}
 }
 
-// contientDuTexte permet de vérifier si le texte contient quelque chose
 func contientDuTexte(s string) bool {
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
@@ -159,26 +143,18 @@ func contientDuTexte(s string) bool {
 	return false
 }
 
-// Permet de valider si la chaîne passée est une clé présente dans ton fichier de langue
-func estUneCleI18n(cle string) bool {
-	return i18n.Existe(cle)
-}
+func estUneCleI18n(cle string) bool { return i18n.Existe(cle) }
 
-// Récupère la vraie chaîne avec les %s depuis ton fichier de langue
-func recupererPatternDepuisI18n(cle string) string {
-	return i18n.GetPattern(cle)
-}
+func recupererPatternDepuisI18n(cle string) string { return i18n.GetPattern(cle) }
 
-// obtenirOuGenerer cherche le composant dans le cache via son ID unique, ou appelle Piper
-func obtenirOuGenerer(idCache string, texte string) ([]byte, error) {
+func (c *Client) obtenirOuGenerer(idCache string, texte string) ([]byte, error) {
 	path := filepath.Join(cacheDir, idCache+".pcm")
-
 	if pcm, err := os.ReadFile(path); err == nil {
 		return pcm, nil
 	}
 
 	fmt.Printf("[TTS] Génération [%s] -> %s\n", idCache, texte)
-	pcm, err := genererPCM(texte)
+	pcm, err := c.genererPCM(texte)
 	if err != nil {
 		return nil, err
 	}
@@ -190,11 +166,8 @@ func obtenirOuGenerer(idCache string, texte string) ([]byte, error) {
 	return pcm, nil
 }
 
-// Bip joue un bip sonore court
-func Bip() {
-	if !started {
-		return
-	}
+// Bip joue un bip sonore court.
+func (c *Client) Bip() {
 	const sampleRate = 22050
 	samples := int(math.Round(float64(sampleRate) * 0.15))
 	buf := make([]byte, samples*2)
@@ -214,28 +187,27 @@ func Bip() {
 	}
 
 	silence := make([]byte, sampleRate/5*2)
-	jouerPCM(append(buf, silence...))
+	c.jouerPCM(append(buf, silence...))
 }
 
-// genererPCM appelle Piper HTTP et retourne le PCM brut (sans l'entête WAV de 44 octets)
+// PiperRequest est le corps JSON envoyé à Piper.
 type PiperRequest struct {
 	Text string `json:"text"`
 }
 
-func genererPCM(texte string) ([]byte, error) {
+func (c *Client) genererPCM(texte string) ([]byte, error) {
 	payload := PiperRequest{Text: texte}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("erreur json: %w", err)
 	}
 
-	resp, err := httpClient.Post(piperURL, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := c.http.Post(c.piperURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("piper HTTP : %w", err)
 	}
 	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
+		if err := Body.Close(); err != nil {
 			fmt.Println(err)
 		}
 	}(resp.Body)
@@ -251,13 +223,12 @@ func genererPCM(texte string) ([]byte, error) {
 	return wav, nil
 }
 
-// jouerPCM lance aplay pour jouer la totalité du flux assemblé
-func jouerPCM(pcm []byte) {
-	mu.Lock()
-	defer mu.Unlock()
+func (c *Client) jouerPCM(pcm []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	aplay := exec.Command("aplay",
-		"-D", alsaDev,
+		"-D", c.alsaDev,
 		"-r", "22050",
 		"-f", "S16_LE",
 		"-c", "1",
