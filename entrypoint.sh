@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-MODEL_PATH="${PIPER_DIR}/${SERVER_PIPER_MODEL_NAME}.onnx"
-CONFIG_PATH="${PIPER_DIR}/${SERVER_PIPER_MODEL_NAME}.onnx.json"
+MODEL_PATH="${PIPER_DIR}/${PIPER_SERVER_MODEL_NAME}.onnx"
+CONFIG_PATH="${PIPER_DIR}/${PIPER_SERVER_MODEL_NAME}.onnx.json"
 
 if [ -z "$(ls -A "$VOSK_MODEL_PATH" 2>/dev/null)" ]; then
     echo "📥 Le dossier Vosk est vide. Téléchargement du modèle ${VOSK_MODEL_NAME}..."
@@ -34,7 +34,7 @@ if [ "$NO_PIPER" != "true" ] && [ "$NO_PIPER" != "1" ]; then
 
     echo "🚀 Lancement de Piper avec le modèle : ${PIPER_SERVER_MODEL_NAME}"
     python3 -m piper.http_server \
-        --model "$PIPER_MODEL" \
+        --model "$MODEL_PATH" \
         --port 5000 &
     PIPER_PID=$!
 
