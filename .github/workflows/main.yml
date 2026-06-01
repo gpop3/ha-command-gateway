@@ -23,11 +23,6 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Debug build tags
-        run: |
-          go list -tags nvosk -f '{{.GoFiles}}' ha-command-gateway/internal/core/stt
-          go list -tags nvosk -f '{{.IgnoredGoFiles}}' ha-command-gateway/internal/core/stt
-
       - name: Vet
         run: |
           go clean -cache
