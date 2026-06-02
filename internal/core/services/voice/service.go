@@ -155,7 +155,7 @@ func (s *Service) traiter(inputText string) {
 		mots := strings.Fields(texte)
 		motAssistant := false
 		for _, m := range mots {
-			if text.DistanceLevenshtein(m, "assistant") <= 2 {
+			if text.DistanceLevenshtein(m, i18n.T("nlp.mot.assistant")) <= 2 {
 				motAssistant = true
 				break
 			}
@@ -167,7 +167,7 @@ func (s *Service) traiter(inputText string) {
 		logx.InfoT("assistant.mot.cle")
 		var filtres []string
 		for _, m := range mots {
-			if text.DistanceLevenshtein(m, "assistant") > 2 {
+			if text.DistanceLevenshtein(m, i18n.T("nlp.mot.assistant")) > 2 {
 				filtres = append(filtres, m)
 			}
 		}
