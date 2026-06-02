@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ha-command-gateway/config"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/utils/conversion"
 	"io"
@@ -106,7 +107,7 @@ func (c *Client) get(path string) ([]byte, error) {
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HA a répondu %d sur GET %s", resp.StatusCode, path)
+		return nil, fmt.Errorf("%s", i18n.T("erreur.ha.reponse.get", resp.StatusCode, path))
 	}
 	return io.ReadAll(resp.Body)
 }
@@ -136,7 +137,7 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HA a répondu %d sur POST %s", resp.StatusCode, path)
+		return nil, fmt.Errorf("%s", i18n.T("erreur.ha.reponse.post", resp.StatusCode, path))
 	}
 	return io.ReadAll(resp.Body)
 }
@@ -229,7 +230,7 @@ func (c *Client) RecupererHistorique(entityID string, dateCible time.Time) (*Eta
 	}
 
 	if len(historique) == 0 || len(historique[0]) == 0 {
-		return nil, fmt.Errorf("aucun historique pour %s à %s", entityID, dateCible.Format("15h04"))
+		return nil, fmt.Errorf("%s", i18n.T("erreur.aucun.historique", entityID, dateCible.Format("15h04")))
 	}
 
 	etat := historique[0][0]

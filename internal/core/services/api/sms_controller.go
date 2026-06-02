@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
 	"net/http"
 	"strings"
@@ -43,7 +44,7 @@ func (c *SMSController) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		if !strings.HasPrefix(ip, "127.0.0.1") {
 			writeJSON(w, http.StatusForbidden, reponseJSON{
 				Succes: false,
-				Erreur: "accès refusé",
+				Erreur: i18n.T("api.acces.refuse"),
 			})
 			return
 		}
@@ -53,7 +54,7 @@ func (c *SMSController) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			if key != "Bearer "+c.apiKey {
 				writeJSON(w, http.StatusUnauthorized, reponseJSON{
 					Succes: false,
-					Erreur: "clé API invalide",
+					Erreur: i18n.T("api.cle.invalide"),
 				})
 				return
 			}
@@ -67,7 +68,7 @@ func (c *SMSController) handleEnvoyerSMS(w http.ResponseWriter, r *http.Request)
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, reponseJSON{
 			Succes: false,
-			Erreur: "méthode non autorisée",
+			Erreur: i18n.T("api.methode.non.autorisee"),
 		})
 		return
 	}
@@ -76,7 +77,7 @@ func (c *SMSController) handleEnvoyerSMS(w http.ResponseWriter, r *http.Request)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, reponseJSON{
 			Succes: false,
-			Erreur: "body JSON invalide : " + err.Error(),
+			Erreur: i18n.T("api.body.json.invalide", err.Error()),
 		})
 		return
 	}
@@ -93,7 +94,7 @@ func (c *SMSController) handleEnvoyerSMS(w http.ResponseWriter, r *http.Request)
 
 	writeJSON(w, http.StatusOK, reponseJSON{
 		Succes:  true,
-		Message: "SMS envoyé à " + req.Numero,
+		Message: i18n.T("api.sms.envoye.a", req.Numero),
 	})
 }
 

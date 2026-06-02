@@ -33,7 +33,7 @@ func (s *ServiceResumeMaison) ExecuterCommande(app Appareil, verbe string, param
 	mode, _ := params["mode"].(string)
 	appareils, err := s.client.RecupererEntites()
 	if err != nil {
-		return "", fmt.Errorf("impossible de récupérer les entités : %w", err)
+		return "", fmt.Errorf("%s : %w", i18n.T("erreur.recuperer.entites"), err)
 	}
 	switch mode {
 	case "temperatures":

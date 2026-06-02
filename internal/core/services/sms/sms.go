@@ -105,13 +105,7 @@ func (s *Service) traiter(numero, message string) {
 // Envoyer implémente core.SMSSender.
 func (s *Service) Envoyer(numero, message string) error {
 	if s.client == nil {
-		return errModemIndispo
+		return fmt.Errorf("%s", i18n.T("erreur.modem.indispo"))
 	}
 	return s.client.EnvoyerSMS(numero, message)
 }
-
-type erreur string
-
-func (e erreur) Error() string { return string(e) }
-
-const errModemIndispo = erreur("modem SMS non disponible")

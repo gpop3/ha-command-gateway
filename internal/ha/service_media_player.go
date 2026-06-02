@@ -1,6 +1,7 @@
 package ha
 
 import (
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
 	"strings"
 )
@@ -148,13 +149,13 @@ func (s *ServiceMediaPlayer) ExecuterCommande(app Appareil, verbe string, params
 		}
 
 		if meilleurMatch.Domain != "media_player" {
-			return "⚠️ [Spotify] Domaine incohérent", nil
+			return i18n.T("media.spotify.domaine.incoherent"), nil
 		}
 
 		if cible, ok := params["cible"].(string); ok && cible != "" {
 			sourceHA := s.trouverSourceSpotify(cible)
 			if sourceHA == "" {
-				return "⚠️ [Spotify] Impossible de trouver la source", nil
+				return i18n.T("media.spotify.source.introuvable"), nil
 			}
 
 			return s.appeler(meilleurMatch.EntityID, "select_source", map[string]interface{}{

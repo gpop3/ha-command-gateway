@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
 	"io"
 	"mime/multipart"
@@ -25,10 +26,10 @@ func (m *moteurRemote) Transcribe(wavData *bytes.Buffer) (string, time.Duration,
 
 	part, err := writer.CreateFormFile("file", "audio.wav")
 	if err != nil {
-		return "", 0, fmt.Errorf("remote: création du champ file : %w", err)
+		return "", 0, fmt.Errorf("%s : %w", i18n.T("erreur.stt.remote.file"), err)
 	}
 	if _, err = io.Copy(part, wavData); err != nil {
-		return "", 0, fmt.Errorf("remote: copie audio : %w", err)
+		return "", 0, fmt.Errorf("%s : %w", i18n.T("erreur.stt.remote.copie"), err)
 	}
 
 	_ = writer.WriteField("model", "Systran/faster-whisper-base")
@@ -53,14 +54,14 @@ func (m *moteurRemote) Transcribe(wavData *bytes.Buffer) (string, time.Duration,
 
 	req, err := http.NewRequest("POST", m.url, body)
 	if err != nil {
-		return "", 0, fmt.Errorf("remote: création requête : %w", err)
+		return "", 0, fmt.Errorf("%s : %w", i18n.T("erreur.stt.remote.requete"), err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("remote: envoi requête : %w", err)
+		return "", 0, fmt.Errorf("%s : %w", i18n.T("erreur.stt.remote.envoi"), err)
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
@@ -71,7 +72,7 @@ func (m *moteurRemote) Transcribe(wavData *bytes.Buffer) (string, time.Duration,
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", 0, fmt.Errorf("remote: lecture réponse : %w", err)
+		return "", 0, fmt.Errorf("%s : %w", i18n.T("erreur.stt.remote.lecture"), err)
 	}
 
 	var result struct {
@@ -79,7 +80,7 @@ func (m *moteurRemote) Transcribe(wavData *bytes.Buffer) (string, time.Duration,
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		logx.InfoT("stt.remote.reponse.json.invalide", string(respBody))
-		return "", 0, fmt.Errorf("remote: réponse invalide : %w", err)
+		return "", 0, fmt.Errorf("%s : %w", i18n.T("erreur.stt.remote.invalide"), err)
 	}
 
 	return result.Text, time.Since(start), nil

@@ -99,7 +99,7 @@ func main() {
 
 	go bus.Lancer(runCtx)
 	if err := mgr.Démarrer(runCtx); err != nil {
-		logx.Fatalf("❌ démarrage services : %v", err)
+		logx.Fatalf("%s", i18n.T("erreur.demarrage.services", err))
 	}
 
 	sig := make(chan os.Signal, 1)

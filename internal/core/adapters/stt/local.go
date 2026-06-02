@@ -3,6 +3,7 @@ package stt
 import (
 	"bytes"
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
 	"os"
 	"os/exec"
@@ -23,7 +24,7 @@ func (m *moteurLocal) Transcribe(wavData *bytes.Buffer) (string, time.Duration, 
 	// Écriture du buffer WAV dans un fichier temporaire
 	tmpFile := "/tmp/assistant_audio.wav"
 	if err := os.WriteFile(tmpFile, wavData.Bytes(), 0644); err != nil {
-		return "", 0, fmt.Errorf("local: écriture fichier tmp : %w", err)
+		return "", 0, fmt.Errorf("%s : %w", i18n.T("erreur.stt.local.ecriture"), err)
 	}
 
 	domoPrompt := "Assistant, allume, éteins, lumière, cuisine, salon, chambre, garage, température, chauffage, stop, musique, ok."
@@ -49,7 +50,7 @@ func (m *moteurLocal) Transcribe(wavData *bytes.Buffer) (string, time.Duration, 
 	duration := time.Since(start)
 
 	if err != nil {
-		return "", 0, fmt.Errorf("local: whisper.cpp a échoué : %w\nSortie: %s", err, string(output))
+		return "", 0, fmt.Errorf("%s : %w\n%s", i18n.T("erreur.stt.local.whisper"), err, i18n.T("erreur.stt.local.sortie", string(output)))
 	}
 
 	logx.InfoT("stt.transcription.locale.terminee.duration", duration)

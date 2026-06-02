@@ -200,12 +200,12 @@ func (c *Client) genererPCM(texte string) ([]byte, error) {
 	payload := PiperRequest{Text: texte}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("erreur json: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("erreur.tts.json"), err)
 	}
 
 	resp, err := c.http.Post(c.piperURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("piper HTTP : %w", err)
+		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.tts.piper"), err)
 	}
 	defer func(Body io.ReadCloser) {
 		if err := Body.Close(); err != nil {
@@ -215,7 +215,7 @@ func (c *Client) genererPCM(texte string) ([]byte, error) {
 
 	wav, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("lecture WAV : %w", err)
+		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.tts.wav"), err)
 	}
 
 	if len(wav) > 44 && string(wav[:4]) == "RIFF" {

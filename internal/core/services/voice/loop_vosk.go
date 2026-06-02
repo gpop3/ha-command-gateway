@@ -3,6 +3,7 @@
 package voice
 
 import (
+	"ha-command-gateway/internal/i18n"
 	"encoding/json"
 	"io"
 
@@ -54,13 +55,13 @@ func initVosk(
 ) {
 	model, err := vosk.NewModel(voskModelPath)
 	if err != nil {
-		logx.Fatalf("Vosk: erreur chargement modèle : %v", err)
+		logx.Fatalf("%s", i18n.T("erreur.vosk.chargement.modele", err))
 	}
 	defer model.Free()
 
 	rec, err := vosk.NewRecognizer(model, 16000.0)
 	if err != nil {
-		logx.Fatalf("Vosk: erreur init recognizer : %v", err)
+		logx.Fatalf("%s", i18n.T("erreur.vosk.init.recognizer", err))
 	}
 	defer rec.Free()
 

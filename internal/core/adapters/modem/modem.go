@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
 	"io"
 	"net/http"
@@ -58,7 +59,7 @@ func New(baseURL, password, verifKey, xorKey, freeKey, hmacKey, whitelist string
 	}
 
 	if err := c.login(); err != nil {
-		return nil, fmt.Errorf("connexion modem TCL : %w", err)
+		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.modem.connexion"), err)
 	}
 	return c, nil
 }
@@ -72,7 +73,7 @@ func (c *Client) login() error {
 	// 1. Récupérer le Salt
 	deviceSt, err := c.call("GetDeviceSt", nil)
 	if err != nil {
-		return fmt.Errorf("GetDeviceSt : %w", err)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.modem.getdevicest"), err)
 	}
 	salt, _ := deviceSt["Salt"].(string)
 
@@ -88,13 +89,13 @@ func (c *Client) login() error {
 	if err != nil {
 		result, err = c.call("ForceLogin", params)
 		if err != nil {
-			return fmt.Errorf("Login/ForceLogin : %w", err)
+			return fmt.Errorf("%s : %w", i18n.T("erreur.modem.login"), err)
 		}
 	}
 
 	token, ok := result["token"].(string)
 	if !ok || token == "" {
-		return fmt.Errorf("token absent de la réponse : %v", result)
+		return fmt.Errorf("%s", i18n.T("erreur.modem.token.absent", result))
 	}
 
 	c.setToken(token)
@@ -135,7 +136,7 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 		}
 	}
 	if sendErr != nil {
-		return fmt.Errorf("SendSMS après %d tentatives : %w", maxRetries, sendErr)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.modem.sendsms.tentatives", maxRetries), sendErr)
 	}
 
 	for i := 0; i < 10; i++ {
@@ -149,7 +150,7 @@ func (c *Client) EnvoyerSMS(numero, message string) error {
 			break
 		}
 		if status == 5 { // SMS_SEND_STATUS_FAILED
-			return fmt.Errorf("envoi SMS échoué")
+			return fmt.Errorf("%s", i18n.T("erreur.modem.envoi.echoue"))
 		}
 	}
 	logx.InfoT("sms.envoye", numero, message)
@@ -381,7 +382,7 @@ func (c *Client) call(method string, params map[string]interface{}) (map[string]
 
 	encParams, err := aesEncrypt(string(paramsJSON), encKey)
 	if err != nil {
-		return nil, fmt.Errorf("chiffrement : %w", err)
+		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.modem.chiffrement"), err)
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -431,11 +432,11 @@ func (c *Client) call(method string, params map[string]interface{}) (map[string]
 		Error  interface{} `json:"error"`
 	}
 	if err := json.Unmarshal(respBody, &data); err != nil {
-		return nil, fmt.Errorf("réponse invalide : %w", err)
+		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.modem.reponse.invalide"), err)
 	}
 
 	if data.Error != nil {
-		return nil, fmt.Errorf("erreur API : %v", data.Error)
+		return nil, fmt.Errorf("%s", i18n.T("erreur.modem.api", data.Error))
 	}
 
 	switch v := data.Result.(type) {

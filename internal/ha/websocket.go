@@ -3,12 +3,14 @@ package ha
 import (
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"ha-command-gateway/internal/logx"
+
+	"github.com/gorilla/websocket"
 )
 
 // wsMessage représente un message JSON-RPC WebSocket HA
@@ -96,7 +98,7 @@ func newWSClient(haURL, token string, timeoutClient time.Duration) (*wsClient, e
 func (c *wsClient) connect() error {
 	conn, _, err := websocket.DefaultDialer.Dial(c.url, nil)
 	if err != nil {
-		return fmt.Errorf("websocket dial : %w", err)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.ws.dial"), err)
 	}
 	c.conn = conn
 
@@ -300,7 +302,7 @@ func (c *wsClient) send(msg wsMessage) (wsMessage, error) {
 	select {
 	case <-ch:
 	case <-time.After(15 * time.Second):
-		return wsMessage{}, fmt.Errorf("timeout connexion WS")
+		return wsMessage{}, fmt.Errorf("%s", i18n.T("erreur.ws.timeout.connexion"))
 	}
 
 	id := int(c.counter.Add(1))
@@ -326,20 +328,20 @@ func (c *wsClient) send(msg wsMessage) (wsMessage, error) {
 		c.pendingMu.Lock()
 		delete(c.pending, id)
 		c.pendingMu.Unlock()
-		return wsMessage{}, fmt.Errorf("envoi WS : %w", err)
+		return wsMessage{}, fmt.Errorf("%s : %w", i18n.T("erreur.ws.envoi"), err)
 	}
 
 	select {
 	case resp := <-respCh:
 		if !resp.Success && resp.Error != nil {
-			return wsMessage{}, fmt.Errorf("WS %s : %s", resp.Error.Code, resp.Error.Message)
+			return wsMessage{}, fmt.Errorf("%s", i18n.T("erreur.ws.reponse", resp.Error.Code, resp.Error.Message))
 		}
 		return resp, nil
 	case <-time.After(10 * time.Second):
 		c.pendingMu.Lock()
 		delete(c.pending, id)
 		c.pendingMu.Unlock()
-		return wsMessage{}, fmt.Errorf("timeout WS id=%d", id)
+		return wsMessage{}, fmt.Errorf("%s", i18n.T("erreur.ws.timeout.id", id))
 	}
 }
 

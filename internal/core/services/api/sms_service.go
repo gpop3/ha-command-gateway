@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 
 	"ha-command-gateway/internal/core"
 )
@@ -19,16 +20,16 @@ func NewSMSService(sender core.SMSSender) *SMSService {
 // EnvoyerSMS valide puis envoie.
 func (s *SMSService) EnvoyerSMS(numero, message string) error {
 	if s.sender == nil {
-		return fmt.Errorf("modem SMS non disponible")
+		return fmt.Errorf("%s", i18n.T("erreur.modem.indispo"))
 	}
 	if numero == "" {
-		return fmt.Errorf("numéro de téléphone requis")
+		return fmt.Errorf("%s", i18n.T("erreur.numero.requis"))
 	}
 	if message == "" {
-		return fmt.Errorf("message requis")
+		return fmt.Errorf("%s", i18n.T("erreur.message.requis"))
 	}
 	if len(message) > 160 {
-		return fmt.Errorf("message trop long (%d caractères, max 160)", len(message))
+		return fmt.Errorf("%s", i18n.T("erreur.message.trop.long", len(message)))
 	}
 	return s.sender.Envoyer(numero, message)
 }

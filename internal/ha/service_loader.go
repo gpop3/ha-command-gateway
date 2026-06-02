@@ -2,13 +2,15 @@ package ha
 
 import (
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"os"
 	"path/filepath"
 	"plugin"
 	"strings"
 
-	"gopkg.in/yaml.v3"
 	"ha-command-gateway/internal/logx"
+
+	"gopkg.in/yaml.v3"
 )
 
 // LoadServicesFromFile charge les services custom depuis un fichier YAML
@@ -19,12 +21,12 @@ func LoadServicesFromFile(path string, client *Client) error {
 		if os.IsNotExist(err) {
 			return nil // pas de fichier = pas d'erreur, c'est optionnel
 		}
-		return fmt.Errorf("lecture %s : %w", path, err)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.loader.lecture", path), err)
 	}
 
 	var configs []ConfigService
 	if err := yaml.Unmarshal(data, &configs); err != nil {
-		return fmt.Errorf("parsing %s : %w", path, err)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.loader.parsing", path), err)
 	}
 
 	for _, cfg := range configs {

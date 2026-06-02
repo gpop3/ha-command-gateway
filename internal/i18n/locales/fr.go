@@ -198,5 +198,111 @@ func init() {
 		"ws.ws.tentative.de.reconnexion":               "🔄 [WS] tentative de reconnexion...",
 		"ws.ws.timeout.get.states":                     "⚠️ [WS] timeout get_states — cache vide, fallback HTTP",
 		"ws.ws.unmarshal.etats":                        "⚠️ [WS] unmarshal états : %v",
+		// ---- Retours d'action (serviceBase) ----
+		"action.ws.ok":   "✅ [WS] [%s] %s → %s",
+		"action.http.ok": "✅ [%s] %s → %s",
+
+		// ---- Heure parlée ----
+		"voix.heure":         "%d heure",
+		"voix.heure.minute":  "%d heure %d",
+		"voix.heures":        "%d heures",
+		"voix.heures.minute": "%d heures %02d",
+
+		// ---- Agenda (lignes) ----
+		"agenda.ligne.simple":  "• %s\n",
+		"agenda.ligne.heure":   "• %s %d %s à %s : %s\n",
+		"agenda.ligne.journee": "• %s %d %s : %s (toute la journée)\n",
+
+		// ---- Media player / Spotify ----
+		"media.spotify.domaine.incoherent": "⚠️ [Spotify] Domaine incohérent",
+		"media.spotify.source.introuvable": "⚠️ [Spotify] Impossible de trouver la source",
+
+		// ---- Liste de courses ----
+		"shopping.maj": "✅ Liste de courses mise à jour",
+
+		// ---- Erreurs HA / client ----
+		"erreur.ha.reponse.get":    "HA a répondu %d sur GET %s",
+		"erreur.ha.reponse.post":   "HA a répondu %d sur POST %s",
+		"erreur.aucun.historique":  "aucun historique pour %s à %s",
+		"erreur.recuperer.entites": "impossible de récupérer les entités",
+
+		// ---- Erreurs WebSocket ----
+		"erreur.ws.dial":              "websocket dial",
+		"erreur.ws.timeout.connexion": "timeout connexion WS",
+		"erreur.ws.envoi":             "envoi WS",
+		"erreur.ws.reponse":           "WS %s : %s",
+		"erreur.ws.timeout.id":        "timeout WS id=%d",
+
+		// ---- Erreurs service loader / custom ----
+		"erreur.loader.lecture":            "lecture %s",
+		"erreur.loader.parsing":            "parsing %s",
+		"erreur.custom.action.introuvable": "aucune action trouvée pour le verbe '%s' sur %s",
+
+		// ---- Erreurs init (voix) ----
+		"erreur.init.tts":           "init TTS",
+		"erreur.init.transcripteur": "init transcripteur",
+		"erreur.demarrage.micro":    "démarrage micro",
+		"erreur.init.service":       "init %s : %v",
+		"erreur.demarrage.services": "❌ démarrage services : %v",
+
+		// ---- Erreurs / messages API SMS ----
+		"erreur.modem.indispo":      "modem SMS non disponible",
+		"erreur.numero.requis":      "numéro de téléphone requis",
+		"erreur.message.requis":     "message requis",
+		"erreur.message.trop.long":  "message trop long (%d caractères, max 160)",
+		"api.acces.refuse":          "accès refusé",
+		"api.cle.invalide":          "clé API invalide",
+		"api.methode.non.autorisee": "méthode non autorisée",
+		"api.body.json.invalide":    "body JSON invalide : %s",
+		"api.sms.envoye.a":          "SMS envoyé à %s",
+
+		// ---- Erreurs modem ----
+		"erreur.modem.connexion":          "connexion modem TCL",
+		"erreur.modem.getdevicest":        "GetDeviceSt",
+		"erreur.modem.login":              "Login/ForceLogin",
+		"erreur.modem.token.absent":       "token absent de la réponse : %v",
+		"erreur.modem.sendsms.tentatives": "SendSMS après %d tentatives",
+		"erreur.modem.envoi.echoue":       "envoi SMS échoué",
+		"erreur.modem.chiffrement":        "chiffrement",
+		"erreur.modem.reponse.invalide":   "réponse invalide",
+		"erreur.modem.api":                "erreur API : %v",
+
+		// ---- Erreurs crypto ----
+		"erreur.crypto.base64":        "base64 decode",
+		"erreur.crypto.header":        "format invalide : header Salted__ manquant",
+		"erreur.crypto.ciphertext":    "ciphertext non aligné",
+		"erreur.crypto.donnees.vides": "données vides",
+		"erreur.crypto.padding":       "padding invalide : %d",
+
+		// ---- Erreurs TTS ----
+		"erreur.tts.json":  "erreur json",
+		"erreur.tts.piper": "piper HTTP",
+		"erreur.tts.wav":   "lecture WAV",
+
+		// ---- Erreurs STT remote ----
+		"erreur.stt.remote.file":     "remote: création du champ file",
+		"erreur.stt.remote.copie":    "remote: copie audio",
+		"erreur.stt.remote.requete":  "remote: création requête",
+		"erreur.stt.remote.envoi":    "remote: envoi requête",
+		"erreur.stt.remote.lecture":  "remote: lecture réponse",
+		"erreur.stt.remote.invalide": "remote: réponse invalide",
+
+		// ---- Erreurs STT local ----
+		"erreur.stt.local.ecriture": "local: écriture fichier tmp",
+		"erreur.stt.local.whisper":  "local: whisper.cpp a échoué",
+		"erreur.stt.local.sortie":   "Sortie: %s",
+
+		// ---- Erreurs STT engine ----
+		"stt.mode.inconnu":          "mode de transcription inconnu : %s",
+		"stt.mode.vosk.explication": "Vosk : la transcription passe par AcceptWaveform dans la boucle audio, pas par Engine.Transcribe()",
+
+		// ---- Erreurs plugins ----
+		"erreur.plugin.ouverture":           "ouverture %s",
+		"erreur.plugin.symbole.introuvable": "%s : symbole NewService introuvable",
+		"erreur.plugin.type":                "%s : NewService doit être de type func(plugins.Env) core.Service",
+
+		// ---- Erreurs Vosk ----
+		"erreur.vosk.chargement.modele": "Vosk: erreur chargement modèle : %v",
+		"erreur.vosk.init.recognizer":   "Vosk: erreur init recognizer : %v",
 	})
 }

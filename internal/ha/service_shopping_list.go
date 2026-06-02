@@ -1,6 +1,10 @@
 package ha
 
-import "fmt"
+import (
+	"fmt"
+
+	"ha-command-gateway/internal/i18n"
+)
 
 // ServiceShoppingList gère le domaine "shopping_list"
 // Note : shopping_list n'utilise pas entity_id dans ses appels API
@@ -31,7 +35,7 @@ func (s *ServiceShoppingList) appeler(entityID, action string, params map[string
 	if err != nil {
 		return "", err
 	}
-	return "✅ Liste de courses mise à jour", nil
+	return i18n.T("shopping.maj"), nil
 }
 
 func (s *ServiceShoppingList) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {

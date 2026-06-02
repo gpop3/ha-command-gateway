@@ -136,7 +136,7 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 		}
 
 		if err != nil {
-			sb.WriteString("• %s\n")
+			sb.WriteString(i18n.GetPattern("agenda.ligne.simple"))
 			params = append(params, e.Summary)
 			continue
 		}
@@ -145,15 +145,15 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 		nomMois := moisFR[t.Month()-1]
 
 		if t.Hour() != 0 || t.Minute() != 0 {
-			heureFormatee := fmt.Sprintf("%d heures", t.Hour())
+			heureFormatee := i18n.T("voix.heures", t.Hour())
 			if t.Minute() > 0 {
-				heureFormatee = fmt.Sprintf("%d heures %02d", t.Hour(), t.Minute())
+				heureFormatee = i18n.T("voix.heures.minute", t.Hour(), t.Minute())
 			}
 
-			sb.WriteString("• %s %d %s à %s : %s\n")
+			sb.WriteString(i18n.GetPattern("agenda.ligne.heure"))
 			params = append(params, jour, t.Day(), nomMois, heureFormatee, e.Summary)
 		} else {
-			sb.WriteString("• %s %d %s : %s (toute la journée)\n")
+			sb.WriteString(i18n.GetPattern("agenda.ligne.journee"))
 			params = append(params, jour, t.Day(), nomMois, e.Summary)
 		}
 	}

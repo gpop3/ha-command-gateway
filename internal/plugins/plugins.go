@@ -37,6 +37,7 @@ import (
 	"plugin"
 
 	"ha-command-gateway/internal/core"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/nlp"
 )
 
@@ -65,17 +66,17 @@ func Charger(dir string, env Env) ([]core.Service, error) {
 	for _, f := range fichiers {
 		p, err := plugin.Open(f)
 		if err != nil {
-			return services, fmt.Errorf("ouverture %s : %w", f, err)
+			return services, fmt.Errorf("%s : %w", i18n.T("erreur.plugin.ouverture", f), err)
 		}
 
 		sym, err := p.Lookup("NewService")
 		if err != nil {
-			return services, fmt.Errorf("%s : symbole NewService introuvable : %w", f, err)
+			return services, fmt.Errorf("%s : %w", i18n.T("erreur.plugin.symbole.introuvable", f), err)
 		}
 
 		fab, ok := sym.(func(Env) core.Service)
 		if !ok {
-			return services, fmt.Errorf("%s : NewService doit être de type func(plugins.Env) core.Service", f)
+			return services, fmt.Errorf("%s", i18n.T("erreur.plugin.type", f))
 		}
 
 		if svc := fab(env); svc != nil {

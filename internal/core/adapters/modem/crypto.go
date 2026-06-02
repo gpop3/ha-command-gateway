@@ -1,6 +1,7 @@
 package modem
 
 import (
+	"ha-command-gateway/internal/i18n"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
@@ -49,11 +50,11 @@ func aesEncrypt(text, key string) (string, error) {
 func aesDecrypt(encryptedB64, key string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(encryptedB64)
 	if err != nil {
-		return "", fmt.Errorf("base64 decode : %w", err)
+		return "", fmt.Errorf("%s : %w", i18n.T("erreur.crypto.base64"), err)
 	}
 
 	if len(data) < 16 || string(data[:8]) != "Salted__" {
-		return "", fmt.Errorf("format invalide : header Salted__ manquant")
+		return "", fmt.Errorf("%s", i18n.T("erreur.crypto.header"))
 	}
 
 	salt := data[8:16]
@@ -69,7 +70,7 @@ func aesDecrypt(encryptedB64, key string) (string, error) {
 	}
 
 	if len(ciphertext)%aes.BlockSize != 0 {
-		return "", fmt.Errorf("ciphertext non aligné")
+		return "", fmt.Errorf("%s", i18n.T("erreur.crypto.ciphertext"))
 	}
 
 	plain := make([]byte, len(ciphertext))
@@ -99,11 +100,11 @@ func pkcs7Pad(data []byte, blockSize int) []byte {
 // pkcs7Unpad retire le padding PKCS7
 func pkcs7Unpad(data []byte) ([]byte, error) {
 	if len(data) == 0 {
-		return nil, fmt.Errorf("données vides")
+		return nil, fmt.Errorf("%s", i18n.T("erreur.crypto.donnees.vides"))
 	}
 	pad := int(data[len(data)-1])
 	if pad == 0 || pad > aes.BlockSize || pad > len(data) {
-		return nil, fmt.Errorf("padding invalide : %d", pad)
+		return nil, fmt.Errorf("%s", i18n.T("erreur.crypto.padding", pad))
 	}
 	return data[:len(data)-pad], nil
 }

@@ -3,6 +3,7 @@ package voice
 import (
 	"context"
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"strings"
 	"time"
 
@@ -71,7 +72,7 @@ func (s *Service) Nom() string { return "voix" }
 func (s *Service) Init(ctx context.Context) error {
 	client, err := tts.New(s.cfg.PiperUrl, s.cfg.AlsaDevice)
 	if err != nil {
-		return fmt.Errorf("init TTS : %w", err)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.init.tts"), err)
 	}
 	s.tts = client
 
@@ -85,13 +86,13 @@ func (s *Service) Init(ctx context.Context) error {
 		VadModel:     s.cfg.WhisperVadModel,
 	})
 	if err != nil {
-		return fmt.Errorf("init transcripteur : %w", err)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.init.transcripteur"), err)
 	}
 	s.engine = engine
 
 	flux, err := DemarrerFluxMicro(s.cfg.AlsaDevice, s.cfg.WindowsMic)
 	if err != nil {
-		return fmt.Errorf("démarrage micro : %w", err)
+		return fmt.Errorf("%s : %w", i18n.T("erreur.demarrage.micro"), err)
 	}
 	s.stdout = flux
 	s.closer = flux

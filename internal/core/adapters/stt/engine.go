@@ -1,6 +1,7 @@
 package stt
 
 import (
+	"ha-command-gateway/internal/i18n"
 	"bytes"
 	"time"
 )
@@ -94,11 +95,11 @@ func (v *moteurVosk) Transcribe(wavData *bytes.Buffer) (string, time.Duration, e
 type ErrModeInconnu struct{ Mode string }
 
 func (e *ErrModeInconnu) Error() string {
-	return "mode de transcription inconnu : " + e.Mode
+	return i18n.T("stt.mode.inconnu", e.Mode)
 }
 
 type ErrModeVosk struct{}
 
 func (e *ErrModeVosk) Error() string {
-	return "Vosk : la transcription passe par AcceptWaveform dans la boucle audio, pas par Engine.Transcribe()"
+	return i18n.T("stt.mode.vosk.explication")
 }

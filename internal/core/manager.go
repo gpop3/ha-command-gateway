@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
 )
 
@@ -53,7 +54,7 @@ func (m *Manager) Démarrer(ctx context.Context) error {
 	for _, s := range m.services {
 		if i, ok := s.(Initialisable); ok {
 			if err := i.Init(ctx); err != nil {
-				return errors.New("init " + s.Nom() + " : " + err.Error())
+				return errors.New(i18n.T("erreur.init.service", s.Nom(), err))
 			}
 		}
 	}

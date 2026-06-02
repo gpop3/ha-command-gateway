@@ -177,7 +177,7 @@ func (b *serviceBase) appeler(entityID, action string, params map[string]interfa
 			// Fallback HTTP
 			goto httpFallback
 		}
-		return fmt.Sprintf("✅ [WS] [%s] %s → %s", b.domaine, entityID, action), nil
+		return i18n.T("action.ws.ok", b.domaine, entityID, action), nil
 	}
 
 httpFallback:
@@ -191,7 +191,7 @@ httpFallback:
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("✅ [%s] %s → %s", b.domaine, entityID, action), nil
+	return i18n.T("action.http.ok", b.domaine, entityID, action), nil
 }
 
 func (b *serviceBase) RecupererEtat(app Appareil, dateCible time.Time, params map[string]interface{}) (*EtatComplet, any, error) {
@@ -211,9 +211,9 @@ func (b *serviceBase) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom 
 
 		var heureVoix string
 		if m == 0 {
-			heureVoix = fmt.Sprintf("%d heure", h)
+			heureVoix = i18n.T("voix.heure", h)
 		} else {
-			heureVoix = fmt.Sprintf("%d heure %d", h, m)
+			heureVoix = i18n.T("voix.heure.minute", h, m)
 		}
 
 		return types.Message{

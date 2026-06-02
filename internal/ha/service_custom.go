@@ -2,6 +2,7 @@ package ha
 
 import (
 	"fmt"
+	"ha-command-gateway/internal/i18n"
 )
 
 // ServiceCustom est un service générique chargé depuis la config YAML
@@ -41,7 +42,7 @@ func (s *ServiceCustom) ExecuterCommande(app Appareil, verbe string, params map[
 		}
 	}
 	if action == "" {
-		return "", fmt.Errorf("aucune action trouvée pour le verbe '%s' sur %s", verbe, s.domaine)
+		return "", fmt.Errorf("%s", i18n.T("erreur.custom.action.introuvable", verbe, s.domaine))
 	}
 	return s.appeler(app.EntityID, action, params)
 }
