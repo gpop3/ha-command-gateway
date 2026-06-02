@@ -109,8 +109,10 @@ func BoucleVosk(
 
 		if n > 0 {
 			if EstEnTrainDeParlerFunc() {
-				wasTalking = true
-				logx.DebugT("vosk.pause")
+				if !wasTalking {
+					logx.DebugT("vosk.pause")
+					wasTalking = true
+				}
 				continue
 			}
 
