@@ -141,6 +141,7 @@ func init() {
 		"audio.fin.du.stream.audio":                    "⚠️ Fin du stream audio avec erreur : %v",
 		"audio.sauvegarderaudio.octets":                "SauvegarderAudio: %s (%d octets)",
 		"audio.vosk.confiance.trop.faible":             "[VOSK] Confiance trop faible (%d) pour : %q",
+		"audio.vosk.text.compris":                      "[VOSK] texte compris : %s",
 		"config.note.aucun.fichier.env":                "Note: aucun fichier .env trouvé, utilisation des variables système",
 		"console.reponse":                              "Réponse : %v",
 		"core.core.service.deja.enregistre":            "⚠️ [core] service '%s' déjà enregistré — ignoré",

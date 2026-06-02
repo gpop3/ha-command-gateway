@@ -101,7 +101,7 @@ func BoucleVosk(
 	etat *int,
 	EstEnTrainDeParlerFunc func() bool,
 ) {
-	buf := make([]byte, 4096)
+	buf := make([]byte, 2024)
 	framessilence := 0
 	const maxFramesSilence = 50
 	wasTalking := false
@@ -117,7 +117,9 @@ func BoucleVosk(
 			}
 
 			if wasTalking {
+				rec.Reset()
 				wasTalking = false
+				continue
 			}
 
 			if EstSilence(buf[:n], 50) {
@@ -145,6 +147,8 @@ func BoucleVosk(
 				}
 
 				if cmd, ok := commandeEstFiable(res); ok {
+					logx.debug("audio.vosk.text.compris", cmd.Text)
+
 					canal <- input.Commande{
 						Texte: cmd.Text,
 						Etat:  etat,
