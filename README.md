@@ -325,6 +325,13 @@ est chargé automatiquement au démarrage). Voir aussi `.env.example`.
 | `ACTIVE_SERVER_HTTP` | `true` | Active l'API HTTP. |
 | `ACTIVE_PRESELECTION` | `true` | Présélection NLP des entités candidates. |
 
+### Configuration de désambiguïsation NLP
+
+| Variable | Défaut | Description                            |
+|----------|--------|----------------------------------------|
+| `DESAMBIGUISATION_ACTIVE` | `true` | Active la désambiguïsation.            |
+| `DESAMBIGUISATION_SEUIL` | `5`    | Seuil pour grouper les propositions    |
+| `DESAMBIGUISATION_MAX_CHOIX` | `3`    | Nombre de choix maximum dans les propositions |
 ---
 
 ## Logs et internationalisation (i18n)

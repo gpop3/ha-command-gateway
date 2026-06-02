@@ -46,7 +46,7 @@ func (s *Service) Démarrer(ctx context.Context) error {
 
 // traiter analyse la commande et restitue la réponse.
 func (s *Service) traiter(inputText string) {
-	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter(inputText)
+	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("console", inputText)
 	logx.InfoT("console.reponse", reponse)
 
 	if appareil == nil || reponse == nil {

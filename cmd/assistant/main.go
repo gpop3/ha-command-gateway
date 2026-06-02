@@ -28,7 +28,11 @@ func main() {
 	haClient := ha.NewClient(cfg.HAUrl, cfg.HAToken, cfg.HAPieces, time.Duration(cfg.HATimeout), cfg)
 	haClient.AttendreWS()
 
-	analyseur := nlp.New(haClient, cfg.ActivePreselection)
+	analyseur := nlp.New(haClient, cfg.ActivePreselection, nlp.ConfigDesambiguisation{
+		Active:   cfg.DesambiguisationActive,
+		Seuil:    cfg.DesambiguisationSeuil,
+		MaxChoix: cfg.DesambiguisationMaxChoix,
+	})
 	if err := analyseur.RafraichirCatalogue(); err != nil {
 		logx.Fatalf("%s", i18n.T("erreur.ha.connexion", err))
 	}

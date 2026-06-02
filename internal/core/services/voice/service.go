@@ -178,7 +178,7 @@ func (s *Service) traiter(inputText string) {
 
 // executer analyse la commande et restitue la réponse à la voix.
 func (s *Service) executer(inputText string) bool {
-	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter(inputText)
+	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("voix", inputText)
 	if appareil == nil || reponse == nil {
 		if match {
 			s.Parler("assistant.retour.erreur")
@@ -190,6 +190,14 @@ func (s *Service) executer(inputText string) bool {
 	} else {
 		s.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
 	}
+
+	// Si une désambiguïsation est en attente, on reste en mode commande
+	if s.analyseur.AttenteDeChoix("voix") {
+		s.dernierMode = time.Now()
+		s.etat = modeCommand
+		return match
+	}
+
 	logx.InfoT("assistant.attente")
 	s.etat = modeVeille
 	return match

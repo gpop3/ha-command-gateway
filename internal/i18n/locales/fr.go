@@ -304,5 +304,11 @@ func init() {
 		// ---- Erreurs Vosk ----
 		"erreur.vosk.chargement.modele": "Vosk: erreur chargement modèle : %v",
 		"erreur.vosk.init.recognizer":   "Vosk: erreur init recognizer : %v",
+
+		// ---- Désambiguïsation (choix multiples) ----
+		"desambiguisation.invite":      "Plusieurs choix possibles : %s. Dites par exemple « choix un ».",
+		"desambiguisation.option":      "%d : %s",
+		"nlp.desambiguisation.propose": "désambiguïsation : %d choix proposés",
+		"nlp.desambiguisation.choix":   "désambiguïsation : choix « %s »",
 	})
 }

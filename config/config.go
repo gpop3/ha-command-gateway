@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/joho/godotenv"
 	"ha-command-gateway/internal/logx"
+
+	"github.com/joho/godotenv"
 )
 
 // Config contient tous les paramètres configurables de l'assistant
@@ -70,6 +71,11 @@ type Config struct {
 
 	// Natural Language Processing (NLP)
 	ActivePreselection bool
+
+	// Désambiguïsation
+	DesambiguisationActive   bool
+	DesambiguisationSeuil    int
+	DesambiguisationMaxChoix int
 
 	// Features
 	ActiveSms        bool
@@ -149,6 +155,11 @@ func Load() *Config {
 
 		// NLP
 		ActivePreselection: getEnv("ACTIVE_PRESELECTION", "true") == "true",
+
+		// Désambiguïsation
+		DesambiguisationActive:   getEnv("DESAMBIGUISATION_ACTIVE", "true") == "true",
+		DesambiguisationSeuil:    getEnvInt("DESAMBIGUISATION_SEUIL", 5),
+		DesambiguisationMaxChoix: getEnvInt("DESAMBIGUISATION_MAX_CHOIX", 3),
 
 		// Features
 		ActiveSms:        getEnv("ACTIVE_SMS", "true") == "true",

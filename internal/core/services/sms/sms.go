@@ -80,7 +80,7 @@ func (s *Service) traiter(numero, message string) {
 		return
 	}
 
-	reponse, _, _, isAction, _ := s.analyseur.AnalyserEtExecuter(message)
+	reponse, _, _, isAction, _ := s.analyseur.AnalyserEtExecuter(numero, message)
 	if reponse == nil {
 		logx.InfoT("sms.traitement.sms.impossible.analyse")
 		return
