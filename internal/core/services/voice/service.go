@@ -20,6 +20,7 @@ import (
 const (
 	modeVeille = iota
 	modeCommand
+	modeAttente
 )
 
 // Config regroupe les paramètres audio / transcription du service voix.
@@ -105,7 +106,7 @@ func (s *Service) Init(ctx context.Context) error {
 // sera traitée par la machine à états vocale.
 func (s *Service) Démarrer(ctx context.Context) error {
 	interne := make(chan input.Commande, 10)
-	go BoucleAudio(s.stdout, s.rec, s.mode, s.engine, &s.etatLoop, interne, s.cfg.VoskModelPath, s.gram)
+	go BoucleAudio(s.stdout, s.rec, s.mode, s.engine, &s.etatLoop, interne, s.cfg.VoskModelPath, s.gram, s.tts.EstEnTrainDeParler)
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -134,10 +135,22 @@ func (s *Service) Fermer(ctx context.Context) error {
 // ---- Traitement vocal (réveil par mot-clé) ----
 
 func (s *Service) traiter(inputText string) {
+	if s.etat == modeAttente {
+		return
+	}
+
+	etatActuel := s.etat
+	s.etat = modeAttente
 	texte := strings.ToLower(inputText)
 	logx.InfoT("commande.vocale", texte)
 
-	switch s.etat {
+	defer func() {
+		if s.etat == modeAttente {
+			s.etat = modeVeille
+		}
+	}()
+
+	switch etatActuel {
 	case modeVeille:
 		mots := strings.Fields(texte)
 		motAssistant := false
@@ -191,7 +204,6 @@ func (s *Service) executer(inputText string) bool {
 		s.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
 	}
 
-	// Si une désambiguïsation est en attente, on reste en mode commande
 	if s.analyseur.AttenteDeChoix("voix") {
 		s.dernierMode = time.Now()
 		s.etat = modeCommand

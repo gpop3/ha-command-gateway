@@ -1,8 +1,8 @@
 package stt
 
 import (
-	"ha-command-gateway/internal/i18n"
 	"bytes"
+	"ha-command-gateway/internal/i18n"
 	"time"
 )
 

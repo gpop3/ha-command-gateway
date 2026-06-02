@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ha-command-gateway/internal/i18n"
@@ -24,22 +25,28 @@ const cacheDir = "/tmp/tts-cache"
 // Client encapsule la connexion à Piper, le périphérique ALSA de sortie et le
 // cache PCM par composant.
 type Client struct {
-	mu       sync.Mutex
-	alsaDev  string
-	piperURL string
-	http     *http.Client
+	mu           sync.Mutex
+	alsaDev      string
+	piperURL     string
+	http         *http.Client
+	estEnLecture atomic.Bool
 }
 
 // New construit un client TTS prêt à l'emploi.
 func New(piperURL, alsaDevice string) (*Client, error) {
 	c := &Client{
-		alsaDev:  alsaDevice,
-		piperURL: piperURL,
-		http:     &http.Client{Timeout: 30 * time.Second},
+		alsaDev:      alsaDevice,
+		piperURL:     piperURL,
+		http:         &http.Client{Timeout: 30 * time.Second},
+		estEnLecture: atomic.Bool{},
 	}
 	_ = os.MkdirAll(cacheDir, 0755)
 	logx.InfoT("tts.pret")
 	return c, nil
+}
+
+func (c *Client) EstEnTrainDeParler() bool {
+	return c.estEnLecture.Load()
 }
 
 type composant struct {
@@ -111,6 +118,10 @@ func (c *Client) Parler(cleEtTexte string, args ...interface{}) {
 		pcm []byte
 		err error
 	}
+
+	c.estEnLecture.Store(true)
+	// Passera à false à la fin de la méthode
+	defer c.estEnLecture.Store(false)
 
 	precharger := func(idx int) chan resultat {
 		ch := make(chan resultat, 1)
