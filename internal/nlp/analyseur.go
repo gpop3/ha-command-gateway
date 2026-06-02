@@ -455,7 +455,7 @@ func interpreterChoix(texte string, n int) (int, bool) {
 		num, ok := 0, false
 		if v, err := strconv.Atoi(mot); err == nil {
 			num, ok = v, true
-		} else if v, trouve := conversion.NombresEnLettres[mot]; trouve {
+		} else if v, trouve := conversion.NombresEnLettres()[mot]; trouve {
 			num, ok = v, true
 		}
 
@@ -627,7 +627,7 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 	for _, mot := range motsSMS {
 		mot = strings.NewReplacer("?", "", ",", "", "l'", "", "d'", "", "'", "").Replace(mot)
 		estUnChiffre := reChiffre.MatchString(mot)
-		_, estUnNombre := conversion.NombresEnLettres[mot]
+		_, estUnNombre := conversion.NombresEnLettres()[mot]
 
 		if (len(mot) < 3 && !estUnChiffre && !estUnNombre) || mot == "est" || mot == "les" || mot == "des" {
 			continue
