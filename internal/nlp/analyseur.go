@@ -485,9 +485,10 @@ func (a *Analyseur) messageDesambiguisation(options []ha.Appareil) types.Message
 
 	motifOptions := strings.Join(placeholders, ", ")
 	phrase := i18n.T("desambiguisation.invite", motifOptions)
+	sms := strings.ReplaceAll(phrase, ", ", "\n")
 
 	return types.Message{
-		SMS:  types.MessageDetails{Texte: phrase, Params: params},
+		SMS:  types.MessageDetails{Texte: sms, Params: params},
 		Voix: types.MessageDetails{Texte: phrase, Params: params},
 	}
 }
