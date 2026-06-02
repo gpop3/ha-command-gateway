@@ -440,6 +440,8 @@ func candidatsProches(classement []Candidat, seuil, max int) []ha.Appareil {
 		}
 		vus[c.Appareil.EntityID] = true
 		options = append(options, c.Appareil)
+
+		logx.Debugf("[désambiguïsation] option %d: %s (score=%d, écart=%d)", len(options), c.Appareil.FriendlyName, c.Score, top-c.Score)
 		if max > 0 && len(options) >= max {
 			break
 		}
