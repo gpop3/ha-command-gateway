@@ -289,7 +289,7 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 	}
 
-	for nombre := range conversion.NombresEnLettres {
+	for nombre := range conversion.NombresEnLettres() {
 		ajouter(nombre)
 	}
 
