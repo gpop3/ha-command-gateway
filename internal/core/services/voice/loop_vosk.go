@@ -113,13 +113,14 @@ func BoucleVosk(
 			if EstEnTrainDeParlerFunc() {
 				wasTalking = true
 				framessilence = 0
+				logx.DebugT("vosk.pause")
 				continue
 			}
 
 			if wasTalking {
 				rec.Reset()
 				wasTalking = false
-				continue
+				logx.DebugT("vosk.reprend")
 			}
 
 			if EstSilence(buf[:n], 50) {
