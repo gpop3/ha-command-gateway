@@ -58,6 +58,11 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck -tags nvosk ./...
 
+      - name: Lint Dockerfile (Hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ./Dockerfile
+
   build:
     needs: quality-and-security
     runs-on: ubuntu-latest
@@ -78,11 +83,6 @@ jobs:
         run: GOOS=linux GOARCH=arm64 go build -tags nvosk -v -o assistant-arm64 ./cmd/assistant/
         env:
           CGO_ENABLED: 0
-
-      - name: Lint Dockerfile (Hadolint)
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: ./Dockerfile
 
   build-and-push:
     needs: build
