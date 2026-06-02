@@ -101,9 +101,7 @@ func BoucleVosk(
 	etat *int,
 	EstEnTrainDeParlerFunc func() bool,
 ) {
-	buf := make([]byte, 2024)
-	framessilence := 0
-	const maxFramesSilence = 50
+	buf := make([]byte, 4096)
 	wasTalking := false
 
 	for {
@@ -112,7 +110,6 @@ func BoucleVosk(
 		if n > 0 {
 			if EstEnTrainDeParlerFunc() {
 				wasTalking = true
-				framessilence = 0
 				logx.DebugT("vosk.pause")
 				continue
 			}
@@ -121,21 +118,6 @@ func BoucleVosk(
 				rec.Reset()
 				wasTalking = false
 				logx.DebugT("vosk.reprend")
-			}
-
-			if EstSilence(buf[:n], 50) {
-				framessilence++
-				if framessilence == maxFramesSilence {
-					logx.DebugT("vosk.pause")
-				}
-				if framessilence >= maxFramesSilence {
-					continue
-				}
-			} else {
-				if framessilence >= maxFramesSilence {
-					logx.DebugT("vosk.reprend")
-				}
-				framessilence = 0
 			}
 
 			if rec.AcceptWaveform(buf[:n]) == 1 {
