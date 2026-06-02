@@ -147,7 +147,7 @@ func BoucleVosk(
 				}
 
 				if cmd, ok := commandeEstFiable(res); ok {
-					logx.debug("audio.vosk.text.compris", cmd.Text)
+					logx.InfoT("audio.vosk.text.compris", cmd.Text)
 
 					canal <- input.Commande{
 						Texte: cmd.Text,
