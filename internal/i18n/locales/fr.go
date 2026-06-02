@@ -307,7 +307,6 @@ func init() {
 
 		// ---- Désambiguïsation (choix multiples) ----
 		"desambiguisation.invite":      "Plusieurs choix possibles : %s. Dites par exemple « choix un ».",
-		"desambiguisation.option":      "%d : %s",
 		"nlp.desambiguisation.propose": "désambiguïsation : %d choix proposés",
 		"nlp.desambiguisation.choix":   "désambiguïsation : choix « %s »",
 

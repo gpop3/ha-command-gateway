@@ -468,20 +468,25 @@ func interpreterChoix(texte string, n int) (int, bool) {
 
 // messageDesambiguisation construit la question à poser pour départager les entités candidates
 func (a *Analyseur) messageDesambiguisation(options []ha.Appareil) types.Message {
-	libelles := make([]string, 0, len(options))
+	placeholders := make([]string, len(options))
+	params := make([]interface{}, 0, len(options)*2)
+
 	for i, app := range options {
 		nom := app.FriendlyNameExact
 		if nom == "" {
 			nom = app.FriendlyName
 		}
-		libelles = append(libelles, i18n.T("desambiguisation.option", i+1, nom))
+
+		placeholders[i] = "%d : %s"
+		params = append(params, i+1, nom)
 	}
-	phrase := i18n.T("desambiguisation.invite", strings.Join(libelles, ", "))
-	phraseSMS := strings.ReplaceAll(phrase, "%", "%%")
+
+	motifOptions := strings.Join(placeholders, ", ")
+	phrase := i18n.T("desambiguisation.invite", motifOptions)
 
 	return types.Message{
-		SMS:  types.MessageDetails{Texte: phraseSMS, Params: []interface{}{}},
-		Voix: types.MessageDetails{Texte: phrase, Params: []interface{}{}},
+		SMS:  types.MessageDetails{Texte: phrase, Params: params},
+		Voix: types.MessageDetails{Texte: phrase, Params: params},
 	}
 }
 
