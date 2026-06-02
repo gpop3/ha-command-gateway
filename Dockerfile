@@ -1,5 +1,6 @@
 FROM debian:bookworm-slim AS deps
 
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Audio
     alsa-utils \
@@ -46,8 +47,8 @@ RUN go build -ldflags="-s -w" -o assistant ./cmd/assistant/
 FROM deps AS final
 
 COPY --from=builder /app/assistant /usr/local/bin/assistant
-RUN mkdir -p /opt/vosk-model
-RUN mkdir -p /opt/piper-voices
+RUN mkdir -p /opt/vosk-model && \
+    mkdir -p /opt/piper-voices
 
 WORKDIR /app
 
