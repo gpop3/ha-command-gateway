@@ -117,7 +117,6 @@ func BoucleVosk(
 			}
 
 			if wasTalking {
-				rec.Reset()
 				wasTalking = false
 			}
 
