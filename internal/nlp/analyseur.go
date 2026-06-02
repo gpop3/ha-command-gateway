@@ -8,7 +8,9 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"ha-command-gateway/internal/ha"
@@ -23,11 +25,79 @@ type Analyseur struct {
 	dernierRafraichissement time.Time
 	catalogueIndex          map[string][]ha.Appareil
 	activePreselection      bool
+
+	desamb     ConfigDesambiguisation
+	muAttentes sync.Mutex
+	attentes   map[string]enAttente
 }
 
+// ConfigDesambiguisation paramètre la proposition de choix multiples lorsque plusieurs entités obtiennent un score très proche.
+type ConfigDesambiguisation struct {
+	Active   bool
+	Seuil    int
+	MaxChoix int
+}
+
+// Candidat associe une entité au score obtenu lors du matching.
+type Candidat struct {
+	Appareil ha.Appareil
+	Score    int
+}
+
+// enAttente mémorise une désambiguïsation en cours pour une session (canal vocal, console ou numéro SMS)
+type enAttente struct {
+	candidats []ha.Appareil
+	verbe     string
+	estAction bool
+	texte     string
+	expire    time.Time
+}
+
+const dureeAttenteChoix = 30 * time.Second
+
 // New crée un analyseur avec le client HA fourni
-func New(haClient *ha.Client, activePreselection bool) *Analyseur {
-	return &Analyseur{haClient: haClient, activePreselection: activePreselection}
+func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisation) *Analyseur {
+	return &Analyseur{
+		haClient:           haClient,
+		activePreselection: activePreselection,
+		desamb:             desamb,
+		attentes:           make(map[string]enAttente),
+	}
+}
+
+// ---- Gestion des désambiguïsations en attente ----
+
+func (a *Analyseur) definirAttente(session string, att enAttente) {
+	att.expire = time.Now().Add(dureeAttenteChoix)
+	a.muAttentes.Lock()
+	a.attentes[session] = att
+	a.muAttentes.Unlock()
+}
+
+func (a *Analyseur) effacerAttente(session string) {
+	a.muAttentes.Lock()
+	delete(a.attentes, session)
+	a.muAttentes.Unlock()
+}
+
+func (a *Analyseur) attentePour(session string) (enAttente, bool) {
+	a.muAttentes.Lock()
+	defer a.muAttentes.Unlock()
+	att, ok := a.attentes[session]
+	if !ok {
+		return enAttente{}, false
+	}
+	if time.Now().After(att.expire) {
+		delete(a.attentes, session)
+		return enAttente{}, false
+	}
+	return att, true
+}
+
+// AttenteDeChoix indique si une désambiguïsation est en attente pour la session.
+func (a *Analyseur) AttenteDeChoix(session string) bool {
+	_, ok := a.attentePour(session)
+	return ok
 }
 
 // RafraichirCatalogue met à jour la liste des entités depuis HA
@@ -124,7 +194,7 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 	}
 
-	for _, mot := range []string{"assistant", "stop", "pourcentage"} {
+	for _, mot := range []string{i18n.T("nlp.mot.assistant"), i18n.T("nlp.mot.pourcentage"), i18n.T("nlp.mot.choix")} {
 		ajouter(mot)
 	}
 
@@ -219,7 +289,7 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 	}
 
-	for nombre := range conversion.NombresEnLettres {
+	for nombre := range conversion.NombresEnLettres() {
 		ajouter(nombre)
 	}
 
@@ -270,9 +340,20 @@ func (a *Analyseur) GenererSystemPrompt() string {
 
 // ---- Point d'entrée principal ----
 
-// AnalyserEtExecuter traite une commande textuelle et retourne la réponse
-func (a *Analyseur) AnalyserEtExecuter(texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
+// AnalyserEtExecuter traite une commande textuelle et retourne la réponse.
+// `session` identifie le canal (« voix », « console » ou numéro SMS (identifiant))
+func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
 	nettoye := strings.ToLower(texte)
+
+	if att, ok := a.attentePour(session); ok {
+		if idx, ok := interpreterChoix(nettoye, len(att.candidats)); ok {
+			a.effacerAttente(session)
+			choisi := att.candidats[idx]
+			logx.DebugT("nlp.desambiguisation.choix", choisi.FriendlyName)
+			return a.executerMatch(choisi, att.verbe, att.estAction, att.texte)
+		}
+		a.effacerAttente(session)
+	}
 
 	verbe, estAction := detecterVerbe(nettoye)
 
@@ -285,40 +366,128 @@ func (a *Analyseur) AnalyserEtExecuter(texte string) (*types.Message, string, bo
 		return nil, verbe, false, false, nil
 	}
 
-	meilleurMatch, meilleurScore := a.TrouverMeilleurMatch(nettoye, estAction, domainesCandidats)
-	if meilleurScore < 30 {
+	classement := a.classerAppareils(nettoye, estAction, domainesCandidats)
+	if len(classement) == 0 || classement[0].Score < 30 {
 		return nil, verbe, false, false, nil
 	}
 
-	params := extraireParamsParService(nettoye, meilleurMatch.Domain)
+	if a.desamb.Active {
+		options := candidatsProches(classement, a.desamb.Seuil, a.desamb.MaxChoix)
+		if len(options) >= 2 {
+			a.definirAttente(session, enAttente{
+				candidats: options,
+				verbe:     verbe,
+				estAction: estAction,
+				texte:     nettoye,
+			})
+			logx.DebugT("nlp.desambiguisation.propose", len(options))
+			msg := a.messageDesambiguisation(options)
+			return &msg, verbe, true, false, &options[0]
+		}
+	}
+
+	return a.executerMatch(classement[0].Appareil, verbe, estAction, nettoye)
+}
+
+// executerMatch applique le verbe (action) ou lit l'état de l'entité choisie
+func (a *Analyseur) executerMatch(app ha.Appareil, verbe string, estAction bool, texteNettoye string) (*types.Message, string, bool, bool, *ha.Appareil) {
+	params := extraireParamsParService(texteNettoye, app.Domain)
 	if params != nil {
 		if _, aUnPourcentage := params["pourcentage"]; aUnPourcentage {
 			estAction = true
 		}
 	}
 
-	logx.DebugT("nlp.estaction.domaine", estAction, meilleurMatch.Domain)
+	logx.DebugT("nlp.estaction.domaine", estAction, app.Domain)
 	estActionParDefaut := false
-	if svc, ok := ha.Lookup(meilleurMatch.Domain); ok && svc.EstActionParDefaut() {
+	if svc, ok := ha.Lookup(app.Domain); ok && svc.EstActionParDefaut() {
 		estActionParDefaut = true
 	}
 
-	svc, ok := ha.Lookup(meilleurMatch.Domain)
+	svc, ok := ha.Lookup(app.Domain)
 	if estAction || estActionParDefaut {
 		if !ok {
-			return nil, verbe, true, estAction, &meilleurMatch
+			return nil, verbe, true, estAction, &app
 		}
-		etat := a.executerActionMessage(svc, meilleurMatch, verbe, params)
-
-		return &etat, verbe, true, estAction, &meilleurMatch
+		etat := a.executerActionMessage(svc, app, verbe, params)
+		return &etat, verbe, true, estAction, &app
 	}
 
 	if !ok {
 		svc, _ = ha.Lookup("service_default")
 	}
 
-	etat := a.lireEtatMessage(svc, meilleurMatch, nettoye, params)
-	return &etat, verbe, true, false, &meilleurMatch
+	etat := a.lireEtatMessage(svc, app, texteNettoye, params)
+	return &etat, verbe, true, false, &app
+}
+
+// ---- Désambiguïsation ----
+
+// candidatsProches renvoie les entités dont le score est à moins de `seuil` du meilleur
+func candidatsProches(classement []Candidat, seuil, max int) []ha.Appareil {
+	if len(classement) == 0 {
+		return nil
+	}
+	top := classement[0].Score
+	vus := make(map[string]bool)
+	var options []ha.Appareil
+	for _, c := range classement {
+		if top-c.Score > seuil {
+			break
+		}
+		if vus[c.Appareil.EntityID] {
+			continue
+		}
+		vus[c.Appareil.EntityID] = true
+		options = append(options, c.Appareil)
+		if max > 0 && len(options) >= max {
+			break
+		}
+	}
+	return options
+}
+
+// interpreterChoix extrait un numéro de choix (1..n)
+func interpreterChoix(texte string, n int) (int, bool) {
+	for _, mot := range strings.Fields(strings.ToLower(texte)) {
+		mot = strings.Trim(mot, ".,!?;:«»\"'")
+
+		num, ok := 0, false
+		if v, err := strconv.Atoi(mot); err == nil {
+			num, ok = v, true
+		} else if v, trouve := conversion.NombresEnLettres()[mot]; trouve {
+			num, ok = v, true
+		}
+
+		if ok && num >= 1 && num <= n {
+			return num - 1, true
+		}
+	}
+	return 0, false
+}
+
+// messageDesambiguisation construit la question à poser pour départager les entités candidates
+func (a *Analyseur) messageDesambiguisation(options []ha.Appareil) types.Message {
+	placeholders := make([]string, len(options))
+	params := make([]interface{}, 0, len(options)*2)
+
+	for i, app := range options {
+		nom := app.FriendlyNameExact
+		if nom == "" {
+			nom = app.FriendlyName
+		}
+
+		placeholders[i] = "%d : %s"
+		params = append(params, i+1, nom)
+	}
+
+	motifOptions := strings.Join(placeholders, ", ")
+	phrase := i18n.T("desambiguisation.invite", motifOptions)
+
+	return types.Message{
+		SMS:  types.MessageDetails{Texte: phrase, Params: params},
+		Voix: types.MessageDetails{Texte: phrase, Params: params},
+	}
 }
 
 // ---- Détection du verbe ----
@@ -384,7 +553,8 @@ var motsParasites = []string{
 	"batterie", "battery",
 }
 
-func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, domainesCandidats []string) (ha.Appareil, int) {
+// classerAppareils score les entités et renvoie les candidats triés par score
+func (a *Analyseur) classerAppareils(texteNettoye string, estAction bool, domainesCandidats []string) []Candidat {
 	motsSMS := strings.Fields(texteNettoye)
 
 	modificateurDemande := ""
@@ -395,41 +565,48 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, do
 		}
 	}
 
-	var meilleurMatch ha.Appareil
-	meilleurScore := 0
+	scorer := func(pool []ha.Appareil) []Candidat {
+		out := make([]Candidat, 0, len(pool))
+		for _, app := range pool {
+			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
+			out = append(out, Candidat{Appareil: app, Score: score})
+		}
+		return out
+	}
 
-	candidats := []ha.Appareil{}
+	var candidats []Candidat
 	for _, domaine := range domainesCandidats {
 		logx.DebugT("nlp.selection.du.domaine", domaine)
-
 		if entites, ok := a.catalogueIndex[domaine]; ok {
-			candidats = append(candidats, entites...)
+			candidats = append(candidats, scorer(entites)...)
 		}
 	}
 
-	if len(candidats) > 0 {
-		for _, app := range candidats {
-			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
-			if score > meilleurScore {
-				logx.DebugT("nlp.preselection.score.domaine", app.FriendlyName, score, app.Domain)
-				meilleurScore = score
-				meilleurMatch = app
-			}
+	meilleur := 0
+	for _, c := range candidats {
+		if c.Score > meilleur {
+			meilleur = c.Score
 		}
 	}
 
-	if meilleurScore < 50 {
-		for _, app := range a.catalogue {
-			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
-			if score > meilleurScore {
-				logx.DebugT("nlp.score.domaine", app.FriendlyName, score, app.Domain)
-				meilleurScore = score
-				meilleurMatch = app
-			}
-		}
+	if meilleur < 50 {
+		candidats = scorer(a.catalogue)
 	}
 
-	return meilleurMatch, meilleurScore
+	sort.SliceStable(candidats, func(i, j int) bool {
+		return candidats[i].Score > candidats[j].Score
+	})
+
+	return candidats
+}
+
+// TrouverMeilleurMatch renvoie l'entité au meilleur score (et son score).
+func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, domainesCandidats []string) (ha.Appareil, int) {
+	classement := a.classerAppareils(texteNettoye, estAction, domainesCandidats)
+	if len(classement) == 0 {
+		return ha.Appareil{}, 0
+	}
+	return classement[0].Appareil, classement[0].Score
 }
 
 func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNettoye, modificateurDemande string, estAction bool) int {
@@ -450,9 +627,9 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 	for _, mot := range motsSMS {
 		mot = strings.NewReplacer("?", "", ",", "", "l'", "", "d'", "", "'", "").Replace(mot)
 		estUnChiffre := reChiffre.MatchString(mot)
-		_, estUnNombre := conversion.NombresEnLettres[mot]
+		_, estUnNombre := conversion.NombresEnLettres()[mot]
 
-		if (len(mot) < 3 && !estUnChiffre && !estUnNombre) || mot == "est" || mot == "les" || mot == "des" {
+		if len(mot) < 3 && !estUnChiffre && !estUnNombre {
 			continue
 		}
 

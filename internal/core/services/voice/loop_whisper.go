@@ -14,6 +14,7 @@ func BoucleDetectionParole(
 	engine *stt.Engine,
 	etat *int,
 	canal chan<- input.Commande,
+	EstEnTrainDeParlerFunc func() bool,
 ) {
 	const (
 		SeuilSilenceMax = 5
@@ -38,6 +39,11 @@ func BoucleDetectionParole(
 		time.Sleep(200 * time.Millisecond)
 		data := recorder.GetRawBytes()
 		doitEnvoyer := false
+
+		if EstEnTrainDeParlerFunc() {
+			recorder.Clear()
+			continue
+		}
 
 		if len(data) >= tailleFenetre {
 			fenetre := data[len(data)-tailleFenetre:]

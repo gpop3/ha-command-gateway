@@ -3,8 +3,8 @@
 package voice
 
 import (
-	"ha-command-gateway/internal/i18n"
 	"encoding/json"
+	"ha-command-gateway/internal/i18n"
 	"io"
 
 	"ha-command-gateway/internal/core/adapters/stt"
@@ -37,11 +37,12 @@ func BoucleAudio(
 	canal chan<- input.Commande,
 	voskModelPath string,
 	grammaireJSON string,
+	EstEnTrainDeParlerFunc func() bool,
 ) {
 	if mode == stt.ModeVosk {
-		initVosk(stdout, recorder, etat, canal, voskModelPath, grammaireJSON)
+		initVosk(stdout, recorder, etat, canal, voskModelPath, grammaireJSON, EstEnTrainDeParlerFunc)
 	} else {
-		BoucleDetectionParole(stdout, recorder, engine, etat, canal)
+		BoucleDetectionParole(stdout, recorder, engine, etat, canal, EstEnTrainDeParlerFunc)
 	}
 }
 
@@ -52,6 +53,7 @@ func initVosk(
 	canal chan<- input.Commande,
 	voskModelPath string,
 	grammaireJSON string,
+	EstEnTrainDeParlerFunc func() bool,
 ) {
 	model, err := vosk.NewModel(voskModelPath)
 	if err != nil {
@@ -70,7 +72,7 @@ func initVosk(
 	rec.SetGrm(grammaireJSON)
 
 	logx.InfoT("audio.vosk.pret")
-	BoucleVosk(stdout, rec, canal, etat)
+	BoucleVosk(stdout, rec, canal, etat, EstEnTrainDeParlerFunc)
 }
 
 func commandeEstFiable(res VoskResultMultiple) (VoskAlternative, bool) {
@@ -97,28 +99,27 @@ func BoucleVosk(
 	rec *vosk.VoskRecognizer,
 	canal chan<- input.Commande,
 	etat *int,
+	EstEnTrainDeParlerFunc func() bool,
 ) {
 	buf := make([]byte, 4096)
-	framessilence := 0
-	const maxFramesSilence = 50
+	wasTalking := false
 
 	for {
 		n, err := stdout.Read(buf)
 
 		if n > 0 {
-			if EstSilence(buf[:n], 50) {
-				framessilence++
-				if framessilence == maxFramesSilence {
+			if EstEnTrainDeParlerFunc() {
+				if !wasTalking {
 					logx.DebugT("vosk.pause")
+					wasTalking = true
 				}
-				if framessilence >= maxFramesSilence {
-					continue
-				}
-			} else {
-				if framessilence >= maxFramesSilence {
-					logx.DebugT("vosk.reprend")
-				}
-				framessilence = 0
+				continue
+			}
+
+			if wasTalking {
+				rec.Reset()
+				wasTalking = false
+				logx.DebugT("vosk.reprend")
 			}
 
 			if rec.AcceptWaveform(buf[:n]) == 1 {
@@ -131,6 +132,8 @@ func BoucleVosk(
 				}
 
 				if cmd, ok := commandeEstFiable(res); ok {
+					logx.InfoT("audio.vosk.text.compris", cmd.Text)
+
 					canal <- input.Commande{
 						Texte: cmd.Text,
 						Etat:  etat,

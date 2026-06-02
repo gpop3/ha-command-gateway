@@ -20,6 +20,7 @@ import (
 const (
 	modeVeille = iota
 	modeCommand
+	modeAttente
 )
 
 // Config regroupe les paramètres audio / transcription du service voix.
@@ -105,7 +106,7 @@ func (s *Service) Init(ctx context.Context) error {
 // sera traitée par la machine à états vocale.
 func (s *Service) Démarrer(ctx context.Context) error {
 	interne := make(chan input.Commande, 10)
-	go BoucleAudio(s.stdout, s.rec, s.mode, s.engine, &s.etatLoop, interne, s.cfg.VoskModelPath, s.gram)
+	go BoucleAudio(s.stdout, s.rec, s.mode, s.engine, &s.etatLoop, interne, s.cfg.VoskModelPath, s.gram, s.tts.EstEnTrainDeParler)
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -134,15 +135,27 @@ func (s *Service) Fermer(ctx context.Context) error {
 // ---- Traitement vocal (réveil par mot-clé) ----
 
 func (s *Service) traiter(inputText string) {
+	if s.etat == modeAttente {
+		return
+	}
+
+	etatActuel := s.etat
+	s.etat = modeAttente
 	texte := strings.ToLower(inputText)
 	logx.InfoT("commande.vocale", texte)
 
-	switch s.etat {
+	defer func() {
+		if s.etat == modeAttente {
+			s.etat = modeVeille
+		}
+	}()
+
+	switch etatActuel {
 	case modeVeille:
 		mots := strings.Fields(texte)
 		motAssistant := false
 		for _, m := range mots {
-			if text.DistanceLevenshtein(m, "assistant") <= 2 {
+			if text.DistanceLevenshtein(m, i18n.T("nlp.mot.assistant")) <= 2 {
 				motAssistant = true
 				break
 			}
@@ -154,7 +167,7 @@ func (s *Service) traiter(inputText string) {
 		logx.InfoT("assistant.mot.cle")
 		var filtres []string
 		for _, m := range mots {
-			if text.DistanceLevenshtein(m, "assistant") > 2 {
+			if text.DistanceLevenshtein(m, i18n.T("nlp.mot.assistant")) > 2 {
 				filtres = append(filtres, m)
 			}
 		}
@@ -178,7 +191,7 @@ func (s *Service) traiter(inputText string) {
 
 // executer analyse la commande et restitue la réponse à la voix.
 func (s *Service) executer(inputText string) bool {
-	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter(inputText)
+	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("voix", inputText)
 	if appareil == nil || reponse == nil {
 		if match {
 			s.Parler("assistant.retour.erreur")
@@ -190,6 +203,13 @@ func (s *Service) executer(inputText string) bool {
 	} else {
 		s.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
 	}
+
+	if s.analyseur.AttenteDeChoix("voix") {
+		s.dernierMode = time.Now()
+		s.etat = modeCommand
+		return match
+	}
+
 	logx.InfoT("assistant.attente")
 	s.etat = modeVeille
 	return match

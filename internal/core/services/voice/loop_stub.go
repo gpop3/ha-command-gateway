@@ -17,9 +17,10 @@ func BoucleAudio(
 	canal chan<- input.Commande,
 	voskModelPath string,
 	grammaireJSON string,
+	EstEnTrainDeParlerFunc func() bool,
 ) {
 	if mode == stt.ModeVosk {
 		logx.WarnT("vosk.windows")
 	}
-	BoucleDetectionParole(stdout, recorder, engine, etat, canal)
+	BoucleDetectionParole(stdout, recorder, engine, etat, canal, EstEnTrainDeParlerFunc)
 }
