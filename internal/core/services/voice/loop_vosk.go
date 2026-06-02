@@ -104,15 +104,21 @@ func BoucleVosk(
 	buf := make([]byte, 4096)
 	framessilence := 0
 	const maxFramesSilence = 50
+	wasTalking := false
 
 	for {
 		n, err := stdout.Read(buf)
 
 		if n > 0 {
 			if EstEnTrainDeParlerFunc() {
-				rec.Reset()
+				wasTalking = true
 				framessilence = 0
 				continue
+			}
+
+			if wasTalking {
+				rec.Reset()
+				wasTalking = false
 			}
 
 			if EstSilence(buf[:n], 50) {
