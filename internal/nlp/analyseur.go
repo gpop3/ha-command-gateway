@@ -194,7 +194,7 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 	}
 
-	for _, mot := range []string{"assistant", "stop", "pourcentage"} {
+	for _, mot := range []string{i18n.T("nlp.mot.assistant"), i18n.T("nlp.mot.pourcentage"), i18n.T("nlp.mot.choix")} {
 		ajouter(mot)
 	}
 

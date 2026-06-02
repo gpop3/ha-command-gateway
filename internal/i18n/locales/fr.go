@@ -310,5 +310,10 @@ func init() {
 		"desambiguisation.option":      "%d : %s",
 		"nlp.desambiguisation.propose": "désambiguïsation : %d choix proposés",
 		"nlp.desambiguisation.choix":   "désambiguïsation : choix « %s »",
+
+		// ---- NLP ----
+		"nlp.mot.assistant":   "assistant",
+		"nlp.mot.pourcentage": "pourcentage",
+		"nlp.mot.choix":       "choix",
 	})
 }
