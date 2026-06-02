@@ -688,7 +688,11 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 
 	// Ne matcher QU'une pièce est un signal faible
 	if aMatchePiece && !aMatcheSpecifique {
-		score -= 100
+		score -= 80
+	}
+
+	if aMatchePiece && aMatcheSpecifique {
+		score += 20
 	}
 
 	if modificateurDemande != "" && ContientLeModificateur {
