@@ -670,7 +670,7 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 			}
 
 			if text.DistanceLevenshtein(motNorm, motHANorm) <= maxErreurs {
-				score += 15
+				score += 20
 				aMatcheSpecifique = true
 				motsMatches++
 				break
@@ -689,10 +689,6 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 	// Ne matcher QU'une pièce est un signal faible
 	if aMatchePiece && !aMatcheSpecifique {
 		score -= 80
-	}
-
-	if aMatchePiece && aMatcheSpecifique {
-		score += 20
 	}
 
 	if modificateurDemande != "" && ContientLeModificateur {
