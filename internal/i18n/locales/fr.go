@@ -307,9 +307,10 @@ func init() {
 		"erreur.vosk.init.recognizer":   "Vosk: erreur init recognizer : %v",
 
 		// ---- Désambiguïsation (choix multiples) ----
-		"desambiguisation.invite":      "Plusieurs choix possibles : %s. Dites par exemple « choix un ».",
-		"nlp.desambiguisation.propose": "désambiguïsation : %d choix proposés",
-		"nlp.desambiguisation.choix":   "désambiguïsation : choix « %s »",
+		"desambiguisation.invite":       "Plusieurs choix possibles : %s. Dites par exemple « choix un ».",
+		"nlp.desambiguisation.propose":  "désambiguïsation : %d choix proposés",
+		"nlp.desambiguisation.choix":    "désambiguïsation : choix « %s »",
+		"nlp.desambiguisation.candidat": "option %d : %s (score %d, écart %d)",
 
 		// ---- NLP ----
 		"nlp.mot.assistant":   "assistant",
