@@ -138,17 +138,13 @@ func (s *Service) traiter(inputText string) {
 	if s.etat == modeAttente {
 		return
 	}
-
 	etatActuel := s.etat
 	s.etat = modeAttente
 	texte := strings.ToLower(inputText)
 	logx.InfoT("commande.vocale", texte)
 
-	defer func() {
-		if s.etat == modeAttente {
-			s.etat = modeVeille
-		}
-	}()
+	prochainEtat := modeVeille
+	defer func() { s.etat = prochainEtat }()
 
 	switch etatActuel {
 	case modeVeille:
@@ -163,8 +159,8 @@ func (s *Service) traiter(inputText string) {
 		if !motAssistant {
 			return
 		}
-
 		logx.InfoT("assistant.mot.cle")
+
 		var filtres []string
 		for _, m := range mots {
 			if text.DistanceLevenshtein(m, i18n.T("nlp.mot.assistant")) > 2 {
@@ -176,15 +172,25 @@ func (s *Service) traiter(inputText string) {
 		if len(filtres) > 0 {
 			match = s.executer(strings.Join(filtres, " "))
 		}
-		if len(filtres) == 0 || !match {
+		switch {
+		case len(filtres) == 0 || !match:
 			s.Bip()
 			s.dernierMode = time.Now()
-			s.etat = modeCommand
+			prochainEtat = modeCommand
+		case s.analyseur.AttenteDeChoix("voix"):
+			s.dernierMode = time.Now()
+			prochainEtat = modeCommand
 		}
 
 	case modeCommand:
-		if len(texte) > 3 {
-			s.executer(inputText)
+		if len(texte) <= 3 {
+			prochainEtat = modeCommand
+			return
+		}
+		s.executer(inputText)
+		if s.analyseur.AttenteDeChoix("voix") {
+			s.dernierMode = time.Now()
+			prochainEtat = modeCommand
 		}
 	}
 }
@@ -192,26 +198,18 @@ func (s *Service) traiter(inputText string) {
 // executer analyse la commande et restitue la réponse à la voix.
 func (s *Service) executer(inputText string) bool {
 	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("voix", inputText)
-	if appareil == nil || reponse == nil {
+	switch {
+	case appareil == nil || reponse == nil:
 		if match {
 			s.Parler("assistant.retour.erreur")
 		} else {
 			s.Parler("assistant.retour.pas.compris")
 		}
-	} else if isAction {
+	case isAction:
 		s.Parler("assistant.retour.action", verbe, appareil.FriendlyName)
-	} else {
+	default:
 		s.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
 	}
-
-	if s.analyseur.AttenteDeChoix("voix") {
-		s.dernierMode = time.Now()
-		s.etat = modeCommand
-		return match
-	}
-
-	logx.InfoT("assistant.attente")
-	s.etat = modeVeille
 	return match
 }
 
