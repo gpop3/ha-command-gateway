@@ -617,12 +617,13 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 	idApp := strings.ToLower(app.EntityID)
 	score := 0
 
-	// Correction : "minuit" ne matche pas "min"
 	if modificateurDemande == "min" && strings.Contains(nomApp, "minuit") && !strings.Contains(nomApp, " min") {
 		nomApp = strings.ReplaceAll(nomApp, "minuit", "")
 	}
 
 	motsMatches := 0
+	aMatchePiece := false
+	aMatcheSpecifique := false
 	ContientLeModificateur := false
 
 	reChiffre := regexp.MustCompile(`^\d+$`)
@@ -637,7 +638,6 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 		}
 
 		if strings.Contains(nomApp, mot) || strings.Contains(idApp, mot) {
-			// Bonus si le mot correspond à une pièce connue
 			matchPiece := false
 			for _, p := range a.GetPieces() {
 				if strings.EqualFold(p.Name, mot) {
@@ -647,24 +647,31 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 			}
 			if matchPiece {
 				score += 100
+				aMatchePiece = true
 			} else {
 				score += 20
+				aMatcheSpecifique = true
 			}
 			motsMatches++
 			continue
 		}
 
-		// Fuzzy match
+		// Fuzzy match : insensible aux accents + tolérance proportionnelle
+		motNorm := text.Normaliser(mot)
 		for _, motHA := range strings.Fields(nomApp) {
 			if len(motHA) < 3 {
 				continue
 			}
-			maxErreurs := 1
-			if len(mot) >= 6 {
-				maxErreurs = 3
+			motHANorm := text.Normaliser(motHA)
+
+			maxErreurs := len(motNorm) / 4
+			if maxErreurs < 1 {
+				maxErreurs = 1
 			}
-			if text.DistanceLevenshtein(mot, motHA) <= maxErreurs {
+
+			if text.DistanceLevenshtein(motNorm, motHANorm) <= maxErreurs {
 				score += 15
+				aMatcheSpecifique = true
 				motsMatches++
 				break
 			}
@@ -677,6 +684,11 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 
 	if score < 15 {
 		return score
+	}
+
+	// Ne matcher QU'une pièce est un signal faible
+	if aMatchePiece && !aMatcheSpecifique {
+		score -= 80
 	}
 
 	if modificateurDemande != "" && ContientLeModificateur {
@@ -703,8 +715,12 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 	nombreMotsHA := len(strings.Fields(nomApp))
 	if nombreMotsHA > motsMatches {
 		score -= (nombreMotsHA - motsMatches) * 2
-	} else if motsMatches > 0 && motsMatches == nombreMotsHA {
+	} else if motsMatches >= 2 && motsMatches == nombreMotsHA {
 		score += 10
+	}
+
+	if estAction && len(motsSMS) <= 1 {
+		score -= 50
 	}
 
 	return score
