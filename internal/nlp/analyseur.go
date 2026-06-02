@@ -702,6 +702,8 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 	nombreMotsHA := len(strings.Fields(nomApp))
 	if nombreMotsHA > motsMatches {
 		score -= (nombreMotsHA - motsMatches) * 2
+	} else if motsMatches > 0 && motsMatches == nombreMotsHA {
+		score += 10
 	}
 
 	return score
