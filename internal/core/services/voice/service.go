@@ -184,6 +184,7 @@ func (s *Service) traiter(inputText string) {
 
 	case modeCommand:
 		if len(texte) <= 3 {
+			s.dernierMode = time.Now()
 			prochainEtat = modeCommand
 			return
 		}
