@@ -629,7 +629,7 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 		estUnChiffre := reChiffre.MatchString(mot)
 		_, estUnNombre := conversion.NombresEnLettres()[mot]
 
-		if (len(mot) < 3 && !estUnChiffre && !estUnNombre) || mot == "est" || mot == "les" || mot == "des" {
+		if len(mot) < 3 && !estUnChiffre && !estUnNombre {
 			continue
 		}
 
