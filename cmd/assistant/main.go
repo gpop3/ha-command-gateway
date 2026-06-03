@@ -32,6 +32,16 @@ func main() {
 		Active:   cfg.DesambiguisationActive,
 		Seuil:    cfg.DesambiguisationSeuil,
 		MaxChoix: cfg.DesambiguisationMaxChoix,
+	}, nlp.ConfigScore{
+		Minimal:               cfg.ScoreMinimal,
+		BonusPiece:            cfg.ScoreBonusPiece,
+		BonusMot:              cfg.ScoreBonusMot,
+		BonusFuzzy:            cfg.ScoreBonusFuzzy,
+		MalusPieceSeule:       cfg.ScoreMalusPieceSeule,
+		BonusLieuFonction:     cfg.ScoreBonusLieuFonction,
+		BonusCouvertureExacte: cfg.ScoreBonusCouvertureExacte,
+		MalusMotSuperflu:      cfg.ScoreMalusMotSuperflu,
+		MalusActionSansCible:  cfg.ScoreMalusActionSansCible,
 	})
 	if err := analyseur.RafraichirCatalogue(); err != nil {
 		logx.Fatalf("%s", i18n.T("erreur.ha.connexion", err))

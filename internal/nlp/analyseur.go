@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +26,7 @@ type Analyseur struct {
 	activePreselection      bool
 
 	desamb     ConfigDesambiguisation
+	score      ConfigScore
 	muAttentes sync.Mutex
 	attentes   map[string]enAttente
 }
@@ -36,6 +36,19 @@ type ConfigDesambiguisation struct {
 	Active   bool
 	Seuil    int
 	MaxChoix int
+}
+
+// ConfigScore expose les pondérations du scoring
+type ConfigScore struct {
+	Minimal               int
+	BonusPiece            int
+	BonusMot              int
+	BonusFuzzy            int
+	MalusPieceSeule       int
+	BonusLieuFonction     int
+	BonusCouvertureExacte int
+	MalusMotSuperflu      int
+	MalusActionSansCible  int
 }
 
 // Candidat associe une entité au score obtenu lors du matching.
@@ -56,11 +69,12 @@ type enAttente struct {
 const dureeAttenteChoix = 30 * time.Second
 
 // New crée un analyseur avec le client HA fourni
-func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisation) *Analyseur {
+func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisation, score ConfigScore) *Analyseur {
 	return &Analyseur{
 		haClient:           haClient,
 		activePreselection: activePreselection,
 		desamb:             desamb,
+		score:              score,
 		attentes:           make(map[string]enAttente),
 	}
 }
@@ -245,8 +259,10 @@ func (a *Analyseur) GenererGrammaire() string {
 		}
 
 		if len(verbes) == 0 {
-			for _, mot := range mots {
-				for _, nom := range nomsEntites {
+			for _, nom := range nomsEntites {
+				ajouter(nom)
+				for _, mot := range mots {
+					ajouter(nom + " " + mot)
 					ajouter(mot + " " + nom)
 				}
 			}
@@ -367,7 +383,7 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 	}
 
 	classement := a.classerAppareils(nettoye, estAction, domainesCandidats)
-	if len(classement) == 0 || classement[0].Score < 30 {
+	if len(classement) == 0 || classement[0].Score < a.score.Minimal {
 		return nil, verbe, false, false, nil
 	}
 
@@ -428,22 +444,28 @@ func candidatsProches(classement []Candidat, seuil, max int) []ha.Appareil {
 	if len(classement) == 0 {
 		return nil
 	}
-	top := classement[0].Score
+	top := classement[0]
 	vus := make(map[string]bool)
-	var options []ha.Appareil
+	var retenus []Candidat
 	for _, c := range classement {
-		if top-c.Score > seuil {
+		if top.Score-c.Score > seuil {
 			break
 		}
 		if vus[c.Appareil.EntityID] {
 			continue
 		}
 		vus[c.Appareil.EntityID] = true
-		options = append(options, c.Appareil)
-
-		logx.DebugT("nlp.desambiguisation.candidat", len(options), c.Appareil.FriendlyName, c.Score, top-c.Score)
-		if max > 0 && len(options) >= max {
+		retenus = append(retenus, c)
+		if max > 0 && len(retenus) >= max {
 			break
+		}
+	}
+
+	options := make([]ha.Appareil, len(retenus))
+	for i, c := range retenus {
+		options[i] = c.Appareil
+		if len(retenus) >= 2 {
+			logx.DebugT("nlp.desambiguisation.candidat", i+1, c.Appareil.FriendlyName, c.Score, top.Score-c.Score)
 		}
 	}
 	return options
@@ -453,15 +475,7 @@ func candidatsProches(classement []Candidat, seuil, max int) []ha.Appareil {
 func interpreterChoix(texte string, n int) (int, bool) {
 	for _, mot := range strings.Fields(strings.ToLower(texte)) {
 		mot = strings.Trim(mot, ".,!?;:«»\"'")
-
-		num, ok := 0, false
-		if v, err := strconv.Atoi(mot); err == nil {
-			num, ok = v, true
-		} else if v, trouve := conversion.NombresEnLettres()[mot]; trouve {
-			num, ok = v, true
-		}
-
-		if ok && num >= 1 && num <= n {
+		if num, ok := conversion.LettreVersEntier(mot); ok && num >= 1 && num <= n {
 			return num - 1, true
 		}
 	}
@@ -646,10 +660,10 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 				}
 			}
 			if matchPiece {
-				score += 100
+				score += a.score.BonusPiece
 				aMatchePiece = true
 			} else {
-				score += 20
+				score += a.score.BonusMot
 				aMatcheSpecifique = true
 			}
 			motsMatches++
@@ -663,14 +677,12 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 				continue
 			}
 			motHANorm := text.Normaliser(motHA)
-
 			maxErreurs := len(motNorm) / 4
 			if maxErreurs < 1 {
 				maxErreurs = 1
 			}
-
 			if text.DistanceLevenshtein(motNorm, motHANorm) <= maxErreurs {
-				score += 15
+				score += a.score.BonusFuzzy
 				aMatcheSpecifique = true
 				motsMatches++
 				break
@@ -688,7 +700,12 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 
 	// Ne matcher QU'une pièce est un signal faible
 	if aMatchePiece && !aMatcheSpecifique {
-		score -= 90
+		score -= a.score.MalusPieceSeule
+	}
+
+	// Matcher le lieu ET la fonction = cible la plus précise.
+	if aMatchePiece && aMatcheSpecifique {
+		score += a.score.BonusLieuFonction
 	}
 
 	if modificateurDemande != "" && ContientLeModificateur {
@@ -712,15 +729,15 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 		score -= 50
 	}
 
-	nombreMotsHA := len(strings.Fields(nomApp))
-	if nombreMotsHA > motsMatches {
-		score -= (nombreMotsHA - motsMatches) * 2
-	} else if motsMatches >= 2 && motsMatches == nombreMotsHA {
-		score += 10
+	if estAction && len(motsSMS) <= 1 {
+		score -= a.score.MalusActionSansCible
 	}
 
-	if estAction && len(motsSMS) <= 1 {
-		score -= 50
+	nombreMotsHA := len(strings.Fields(nomApp))
+	if nombreMotsHA > motsMatches {
+		score -= (nombreMotsHA - motsMatches) * a.score.MalusMotSuperflu
+	} else if motsMatches >= 2 && motsMatches == nombreMotsHA {
+		score += a.score.BonusCouvertureExacte
 	}
 
 	return score

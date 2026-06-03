@@ -77,6 +77,17 @@ type Config struct {
 	DesambiguisationSeuil    int
 	DesambiguisationMaxChoix int
 
+	// Pondération du scoring NLP
+	ScoreMinimal               int
+	ScoreBonusPiece            int
+	ScoreBonusMot              int
+	ScoreBonusFuzzy            int
+	ScoreMalusPieceSeule       int
+	ScoreBonusLieuFonction     int
+	ScoreBonusCouvertureExacte int
+	ScoreMalusMotSuperflu      int
+	ScoreMalusActionSansCible  int
+
 	// Features
 	ActiveSms        bool
 	ActiveVoice      bool
@@ -160,6 +171,17 @@ func Load() *Config {
 		DesambiguisationActive:   getEnv("DESAMBIGUISATION_ACTIVE", "true") == "true",
 		DesambiguisationSeuil:    getEnvInt("DESAMBIGUISATION_SEUIL", 5),
 		DesambiguisationMaxChoix: getEnvInt("DESAMBIGUISATION_MAX_CHOIX", 3),
+
+		// Scoring NLP
+		ScoreMinimal:               getEnvInt("SCORE_MINIMAL", 30),
+		ScoreBonusPiece:            getEnvInt("SCORE_BONUS_PIECE", 100),
+		ScoreBonusMot:              getEnvInt("SCORE_BONUS_MOT", 20),
+		ScoreBonusFuzzy:            getEnvInt("SCORE_BONUS_FUZZY", 15),
+		ScoreMalusPieceSeule:       getEnvInt("SCORE_MALUS_PIECE_SEULE", 80),
+		ScoreBonusLieuFonction:     getEnvInt("SCORE_BONUS_LIEU_FONCTION", 60),
+		ScoreBonusCouvertureExacte: getEnvInt("SCORE_BONUS_COUVERTURE_EXACTE", 10),
+		ScoreMalusMotSuperflu:      getEnvInt("SCORE_MALUS_MOT_SUPERFLU", 2),
+		ScoreMalusActionSansCible:  getEnvInt("SCORE_MALUS_ACTION_SANS_CIBLE", 50),
 
 		// Features
 		ActiveSms:        getEnv("ACTIVE_SMS", "true") == "true",
