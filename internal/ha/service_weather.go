@@ -2,6 +2,7 @@ package ha
 
 import (
 	"encoding/json"
+	"fmt"
 	"ha-command-gateway/internal/utils/text"
 	"strings"
 	"time"
@@ -145,7 +146,7 @@ func (s *ServiceWeather) EtatEnMessage(app Appareil, etat *EtatComplet, etatCust
 		return messageErreurMeteo()
 	}
 	messageSms, paramsSms := s.construireMessageSms(data)
-	messageVoix, paramsVoix := s.construireMessageSms(data)
+	messageVoix, paramsVoix := s.construireMessageVoix(data)
 
 	return types.Message{
 		SMS:  types.MessageDetails{Texte: messageSms, Params: paramsSms},
@@ -159,6 +160,18 @@ func (s *ServiceWeather) construireMessageSms(d MeteoData) (string, []interface{
 
 func (s *ServiceWeather) construireMessageVoix(d MeteoData) (string, []interface{}) {
 	return s.construireMessageFactored(d, "voix")
+}
+
+func formatageHeureVoix(t time.Time) string {
+	heure := t.Hour()
+	minute := t.Minute()
+
+	motHeure := i18n.T("mot.heure")
+	if minute == 0 {
+		return fmt.Sprintf("%d %s", heure, motHeure)
+	}
+
+	return fmt.Sprintf("%d %s %d", heure, motHeure, minute)
 }
 
 func (s *ServiceWeather) construireMessageFactored(d MeteoData, canal string) (string, []interface{}) {
@@ -217,7 +230,14 @@ func (s *ServiceWeather) construireMessageFactored(d MeteoData, canal string) (s
 			}
 
 			sb.WriteString(getPattern("meteo.heure.ligne.%canal%"))
-			params = append(params, t.Format("15h04"), tradCondition(p.Condition), p.Temperature)
+
+			var heureAffichage string
+			if canal == "voix" {
+				heureAffichage = formatageHeureVoix(t)
+			} else {
+				heureAffichage = t.Format("15h04")
+			}
+			params = append(params, heureAffichage, tradCondition(p.Condition), p.Temperature)
 			if p.Precipitation > 0 {
 				sb.WriteString(getPattern("meteo.precipitation.%canal%"))
 				params = append(params, p.Precipitation)

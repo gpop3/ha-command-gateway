@@ -67,17 +67,17 @@ func init() {
 
 		// ---- Météo ----
 		"meteo.actuelle.sms":       "Météo actuelle : %s, %.0f°C",
-		"meteo.actuelle.voix":      "Météo actuelle : %s, %.0f degrés Celsius",
+		"meteo.actuelle.voix":      "Météo actuelle : %s, %.0f degrés",
 		"meteo.humidite":           ", humidité %d%%",
 		"meteo.vent.sms":           ", vent %.0f km/h",
 		"meteo.vent.voix":          ", vent %.0f kilometres par heure",
 		"meteo.previsions":         "Prévisions pour les prochaines heures :\n",
 		"meteo.heure.ligne.sms":    "• %s : %s, %.0f°C",
-		"meteo.heure.ligne.voix":   " %s : %s, %.0f degrés Celsius",
+		"meteo.heure.ligne.voix":   " %s : %s, %.0f degrés",
 		"meteo.precipitation.sms":  ", %.1f mm",
 		"meteo.precipitation.voix": " avec %.1f millimètre de pluie",
 		"meteo.demain.sms":         "Demain : %s, %.0f°C",
-		"meteo.demain.voix":        "Demain : %s, %.0f degrés Celsius",
+		"meteo.demain.voix":        "Demain : %s, %.0f degrés",
 		"meteo.demain.vent.sms":    ", vent %.0f km/h",
 		"meteo.demain.vent.voix":   ", vent %.0f kilometres par heure",
 		"meteo.indispo":            "Aucune prévision disponible.",
@@ -85,7 +85,7 @@ func init() {
 		"meteo.semaine":            "Prévisions de la semaine :\n",
 		"meteo.weekend":            "Prévisions du week-end :\n",
 		"meteo.jour.ligne.sms":     "• %s : %s, %.0f°C",
-		"meteo.jour.ligne.voix":    " %s : %s, %.0f degrés Celsius",
+		"meteo.jour.ligne.voix":    " %s : %s, %.0f degrés",
 
 		"meteo.erreur.previsions": "météo: échec récupération prévisions %s (%s) : %v",
 		"meteo.erreur.actuel":     "météo: échec récupération état actuel %s : %v",
@@ -435,5 +435,8 @@ func init() {
 		"nombre.98":  "quatre-vingt-dix-huit",
 		"nombre.99":  "quatre-vingt-dix-neuf",
 		"nombre.100": "cent",
+
+		// Mots en vrac
+		"mot.heure": "heure",
 	})
 }
