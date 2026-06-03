@@ -134,6 +134,12 @@ func (a *Analyseur) RafraichirCatalogue() error {
 			Domain:            "time",
 		},
 		ha.Appareil{
+			EntityID:          "time.local",
+			FriendlyName:      "date",
+			FriendlyNameExact: "date",
+			Domain:            "time",
+		},
+		ha.Appareil{
 			EntityID:          "weather.forecast_maison",
 			FriendlyName:      "météo",
 			FriendlyNameExact: "météo",
