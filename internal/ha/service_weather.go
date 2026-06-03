@@ -144,16 +144,31 @@ func (s *ServiceWeather) EtatEnMessage(app Appareil, etat *EtatComplet, etatCust
 		logx.ErrorT("meteo.erreur.etatcustom", etatCustom)
 		return messageErreurMeteo()
 	}
-	message, params := s.construireMessage(data)
+	messageSms, paramsSms := s.construireMessageSms(data)
+	messageVoix, paramsVoix := s.construireMessageSms(data)
+
 	return types.Message{
-		SMS:  types.MessageDetails{Texte: message, Params: params},
-		Voix: types.MessageDetails{Texte: message, Params: params},
+		SMS:  types.MessageDetails{Texte: messageSms, Params: paramsSms},
+		Voix: types.MessageDetails{Texte: messageVoix, Params: paramsVoix},
 	}
 }
 
-func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) {
+func (s *ServiceWeather) construireMessageSms(d MeteoData) (string, []interface{}) {
+	return s.construireMessageFactored(d, "sms")
+}
+
+func (s *ServiceWeather) construireMessageVoix(d MeteoData) (string, []interface{}) {
+	return s.construireMessageFactored(d, "voix")
+}
+
+func (s *ServiceWeather) construireMessageFactored(d MeteoData, canal string) (string, []interface{}) {
 	var sb strings.Builder
 	var params []interface{}
+
+	getPattern := func(baseKey string) string {
+		cleDynamique := strings.ReplaceAll(baseKey, "%canal%", canal)
+		return i18n.GetPattern(cleDynamique)
+	}
 
 	switch d.Horizon {
 	case "hourly":
@@ -201,10 +216,10 @@ func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) 
 				}
 			}
 
-			sb.WriteString(i18n.GetPattern("meteo.heure.ligne"))
+			sb.WriteString(getPattern("meteo.heure.ligne.%canal%"))
 			params = append(params, t.Format("15h04"), tradCondition(p.Condition), p.Temperature)
 			if p.Precipitation > 0 {
-				sb.WriteString(i18n.GetPattern("meteo.precipitation"))
+				sb.WriteString(getPattern("meteo.precipitation.%canal%"))
 				params = append(params, p.Precipitation)
 			}
 			sb.WriteString("\n")
@@ -237,10 +252,10 @@ func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) 
 			if d.Horizon == "weekend" && t.Weekday() != time.Saturday && t.Weekday() != time.Sunday {
 				continue
 			}
-			sb.WriteString(i18n.GetPattern("meteo.jour.ligne"))
+			sb.WriteString(getPattern("meteo.jour.ligne.%canal%"))
 			params = append(params, joursFR[t.Weekday()], tradCondition(p.Condition), p.Temperature)
 			if p.Precipitation > 0 {
-				sb.WriteString(i18n.GetPattern("meteo.precipitation"))
+				sb.WriteString(getPattern("meteo.precipitation.%canal%"))
 				params = append(params, p.Precipitation)
 			}
 			sb.WriteString("\n")
@@ -255,26 +270,26 @@ func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) 
 			return i18n.GetPattern("meteo.demain.indispo"), nil
 		}
 		p := d.Previsions[d.Jour]
-		sb.WriteString(i18n.GetPattern("meteo.demain"))
+		sb.WriteString(getPattern("meteo.demain.%canal%"))
 		params = append(params, tradCondition(p.Condition), p.Temperature)
 		if p.Precipitation > 0 {
-			sb.WriteString(i18n.GetPattern("meteo.precipitation"))
+			sb.WriteString(getPattern("meteo.precipitation.%canal%"))
 			params = append(params, p.Precipitation)
 		}
 		if p.WindSpeed > 0 {
-			sb.WriteString(i18n.GetPattern("meteo.demain.vent"))
+			sb.WriteString(getPattern("meteo.demain.vent.%canal%"))
 			params = append(params, p.WindSpeed)
 		}
 
 	default:
-		sb.WriteString(i18n.GetPattern("meteo.actuelle"))
+		sb.WriteString(getPattern("meteo.actuelle.%canal%"))
 		params = append(params, tradCondition(d.Condition), d.Temp)
 		if d.Humidite > 0 {
 			sb.WriteString(i18n.GetPattern("meteo.humidite"))
 			params = append(params, d.Humidite)
 		}
 		if d.Vent > 0 {
-			sb.WriteString(i18n.GetPattern("meteo.vent"))
+			sb.WriteString(getPattern("meteo.vent.%canal%"))
 			params = append(params, d.Vent)
 		}
 	}
