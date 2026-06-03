@@ -45,8 +45,9 @@ func (s *ServiceTime) ExecuterCommande(app Appareil, verbe string, params map[st
 
 func (s *ServiceTime) MotsReconnus() []string {
 	return []string{
-		"heure", "date", "jour", "mois", "année", "semaine",
-		"midi", "minuit", "matin", "soir",
+		"quelle", "quel", "heure", "date", "jour", "mois", "année", "semaine",
+		"midi", "minuit", "matin", "soir", "aujourd'hui",
+		"lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
 	}
 }
 
