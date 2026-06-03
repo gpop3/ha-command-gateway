@@ -60,8 +60,6 @@ type Candidat struct {
 // enAttente mémorise une désambiguïsation en cours pour une session (canal vocal, console ou numéro SMS)
 type enAttente struct {
 	candidats []ha.Appareil
-	verbe     string
-	estAction bool
 	texte     string
 	expire    time.Time
 }
@@ -341,7 +339,7 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 			a.effacerAttente(session)
 			choisi := att.candidats[idx]
 			logx.DebugT("nlp.desambiguisation.choix", choisi.FriendlyName)
-			return a.executerMatch(choisi, att.verbe, att.estAction, att.texte)
+			return a.executerMatch(choisi, att.texte)
 		}
 		a.effacerAttente(session)
 	}
@@ -357,7 +355,7 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 		return nil, verbe, false, false, nil
 	}
 
-	classement := a.classerAppareils(nettoye, estAction, domainesCandidats)
+	classement := a.classerAppareils(nettoye, domainesCandidats)
 	if len(classement) == 0 || classement[0].Score < a.score.Minimal {
 		return nil, verbe, false, false, nil
 	}
@@ -367,8 +365,6 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 		if len(options) >= 2 {
 			a.definirAttente(session, enAttente{
 				candidats: options,
-				verbe:     verbe,
-				estAction: estAction,
 				texte:     nettoye,
 			})
 			logx.DebugT("nlp.desambiguisation.propose", len(options))
@@ -377,11 +373,16 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 		}
 	}
 
-	return a.executerMatch(classement[0].Appareil, verbe, estAction, nettoye)
+	return a.executerMatch(classement[0].Appareil, nettoye)
 }
 
 // executerMatch applique le verbe (action) ou lit l'état de l'entité choisie
-func (a *Analyseur) executerMatch(app ha.Appareil, verbe string, estAction bool, texteNettoye string) (*types.Message, string, bool, bool, *ha.Appareil) {
+func (a *Analyseur) executerMatch(app ha.Appareil, texteNettoye string) (*types.Message, string, bool, bool, *ha.Appareil) {
+	verbe, estAction := "", false
+	if v, ok := domaineAUnVerbe(texteNettoye, app.Domain); ok {
+		verbe, estAction = v, true
+	}
+
 	params := extraireParamsParService(texteNettoye, app.Domain)
 	if params != nil {
 		if _, aUnPourcentage := params["pourcentage"]; aUnPourcentage {
@@ -501,6 +502,20 @@ func detecterVerbe(texte string) (verbe string, estAction bool) {
 	return "", false
 }
 
+// domaineAUnVerbe cherche, dans le texte, un mot que le service de `domaine`
+func domaineAUnVerbe(texte, domaine string) (string, bool) {
+	svc, ok := ha.Lookup(domaine)
+	if !ok {
+		return "", false
+	}
+	for _, mot := range strings.Fields(texte) {
+		if _, vok := svc.Verbe(mot); vok {
+			return mot, true
+		}
+	}
+	return "", false
+}
+
 // ---- Détection des domaines en fonction des verbes ----
 
 // detecterDomaines parcourt tous les services enregistrés pour trouver les domaines
@@ -546,7 +561,7 @@ var motsParasites = []string{
 }
 
 // classerAppareils score les entités et renvoie les candidats triés par score
-func (a *Analyseur) classerAppareils(texteNettoye string, estAction bool, domainesCandidats []string) []Candidat {
+func (a *Analyseur) classerAppareils(texteNettoye string, domainesCandidats []string) []Candidat {
 	motsSMS := strings.Fields(texteNettoye)
 
 	modificateurDemande := ""
@@ -557,10 +572,20 @@ func (a *Analyseur) classerAppareils(texteNettoye string, estAction bool, domain
 		}
 	}
 
+	cacheAction := make(map[string]bool)
+	estActionDomaine := func(domaine string) bool {
+		if v, ok := cacheAction[domaine]; ok {
+			return v
+		}
+		_, ok := domaineAUnVerbe(texteNettoye, domaine)
+		cacheAction[domaine] = ok
+		return ok
+	}
+
 	scorer := func(pool []ha.Appareil) []Candidat {
 		out := make([]Candidat, 0, len(pool))
 		for _, app := range pool {
-			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estAction)
+			score := a.scorerAppareil(app, motsSMS, texteNettoye, modificateurDemande, estActionDomaine(app.Domain))
 			out = append(out, Candidat{Appareil: app, Score: score})
 		}
 		return out
@@ -594,7 +619,8 @@ func (a *Analyseur) classerAppareils(texteNettoye string, estAction bool, domain
 
 // TrouverMeilleurMatch renvoie l'entité au meilleur score (et son score).
 func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, domainesCandidats []string) (ha.Appareil, int) {
-	classement := a.classerAppareils(texteNettoye, estAction, domainesCandidats)
+	_ = estAction
+	classement := a.classerAppareils(texteNettoye, domainesCandidats)
 	if len(classement) == 0 {
 		return ha.Appareil{}, 0
 	}
