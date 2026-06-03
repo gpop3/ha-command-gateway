@@ -401,7 +401,7 @@ func (a *Analyseur) executerMatch(app ha.Appareil, verbe string, estAction bool,
 			return nil, verbe, true, estAction, &app
 		}
 		etat := a.executerActionMessage(svc, app, verbe, params)
-		return &etat, verbe, true, estAction, &app
+		return &etat, verbe, true, estAction && !estActionParDefaut, &app
 	}
 
 	if !ok {
