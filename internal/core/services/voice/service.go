@@ -149,31 +149,29 @@ func (s *Service) traiter(inputText string) {
 	switch etatActuel {
 	case modeVeille:
 		mots := strings.Fields(texte)
-		motAssistant := false
-		for _, m := range mots {
-			if text.DistanceLevenshtein(m, i18n.T("nlp.mot.assistant")) <= 2 {
-				motAssistant = true
+		cle := i18n.T("nlp.mot.assistant")
+
+		idxAssistant := -1
+		for i, m := range mots {
+			if text.DistanceLevenshtein(m, cle) <= 2 {
+				idxAssistant = i
 				break
 			}
 		}
-		if !motAssistant {
+		if idxAssistant == -1 {
 			return
 		}
 		logx.InfoT("assistant.mot.cle")
 
-		var filtres []string
-		for _, m := range mots {
-			if text.DistanceLevenshtein(m, i18n.T("nlp.mot.assistant")) > 2 {
-				filtres = append(filtres, m)
-			}
-		}
+		filtres := mots[idxAssistant+1:]
 
 		match := false
-		if len(filtres) > 0 {
-			match = s.executer(strings.Join(filtres, " "), true)
+		commande := strings.Join(filtres, " ")
+		if len(commande) > 3 {
+			match = s.executer(commande, true)
 		}
 		switch {
-		case len(filtres) == 0 || !match:
+		case !match:
 			s.Bip()
 			s.dernierMode = time.Now()
 			prochainEtat = modeCommand
