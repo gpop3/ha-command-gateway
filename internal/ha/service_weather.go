@@ -98,6 +98,10 @@ func (s *ServiceWeather) RecupererEtat(app Appareil, dateCible time.Time, params
 
 	switch horizon {
 	case "hourly":
+		if periode, ok := params["periode"].(string); ok {
+			data.Periode = periode
+		}
+
 		prev, err := s.getPrevisions(app.EntityID, "hourly")
 		if err != nil {
 			logx.ErrorT("meteo.erreur.previsions", app.EntityID, "hourly", err)
