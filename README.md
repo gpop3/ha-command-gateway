@@ -1,10 +1,10 @@
 # Assistant Domotique Go (`ha-command-gateway`)
 
 Passerelle entre des **commandes en langage naturel** et **Home Assistant**.  
-L'assistant écoute des ordres venant de trois sources  
+L'assistant écoute des ordres venant de trois sources
 - la **voix** (micro + transcription)
-- les **SMS** (modem TCL LinkKey IK41) 
-- la **console** — les analyse pour piloter  
+- les **SMS** (modem TCL LinkKey IK41)
+- la **console** — les analyse pour piloter
 
 Home Assistant ou répondre à une question, puis renvoie la réponse via la **synthèse vocale** (Piper) ou par **SMS**.  
 Une petite **API HTTP** permet aussi de déclencher l'envoi d'un SMS depuis l'extérieur.
@@ -34,6 +34,9 @@ Une petite **API HTTP** permet aussi de déclencher l'envoi d'un SMS depuis l'ex
 - **Console** : saisie clavier pour tester sans micro ni modem.
 - **NLP** : analyse de la commande, mise en correspondance avec les entités
   Home Assistant et exécution de l'action (ou récupération d'un état).
+- **Désambiguïsation** : quand plusieurs entités obtiennent un score très
+  proche, l'assistant propose une liste de choix (« 1 : …, 2 : … ») et attend
+  la réponse de l'utilisateur (« choix un »).
 - **Réponses** : synthèse vocale **Piper** (avec cache PCM par composant) ou
   réponse par SMS.
 - **API HTTP** : `POST /sms/send` pour envoyer un SMS depuis une autre app.
@@ -183,6 +186,20 @@ Chaque service reçoit le bus à sa création et, quand il reçoit une entrée, 
 un service (ou un plugin) qui traite les commandes **comme il l'entend**, sans
 toucher au reste.
 
+### Entités virtuelles et init des domaines
+
+Certains domaines NLP n'ont pas d'entité réelle dans Home Assistant (heure,
+date, météo, agenda, résumé maison). Chaque service de domaine déclare lui-même
+ses **entités virtuelles** (interface `ha.ServiceAvecAppareils`), et celles-ci
+sont ajoutées au catalogue lors du rafraîchissement — au lieu d'être codées en
+dur dans le NLP.
+
+De même, un domaine qui a besoin d'une référence à l'analyseur (par ex.
+`media_player` pour retrouver l'enceinte Spotify, `agenda` pour lire le
+catalogue) implémente `ha.Init(analyseur)` : l'analyseur lui est injecté **une
+seule fois**, après que le catalogue est prêt. L'interface vit côté `ha`, donc
+aucune dépendance circulaire avec `nlp`.
+
 ---
 
 ## Prérequis
@@ -244,12 +261,18 @@ go build -tags nvosk ./cmd/assistant/   # utilise les modes remote/local
 Toutes les options se règlent par variables d'environnement (un fichier `.env`
 est chargé automatiquement au démarrage). Voir aussi `.env.example`.
 
+> **Note** : la plupart des variables sont lues par le binaire Go
+> (`config/config.go`). Quelques-unes sont lues **directement** ou par
+> l'**entrypoint Docker** (téléchargement des modèles au premier démarrage) :
+> `LOG_LEVEL`, `NO_PIPER`, `VOSK_MODEL_NAME`, `PIPER_SERVER_LANG`,
+> `PIPER_SERVER_VOICE`, `PIPER_SERVER_MODEL_NAME`. C'est précisé dans les tables.
+
 ### Général
 
 | Variable | Défaut | Description |
 |----------|--------|-------------|
 | `LANG` | `fr` | Langue des messages (clé i18n). |
-| `LOG_LEVEL` | `info` | Niveau minimal de log : `debug`, `info`, `warn`, `error`. |
+| `LOG_LEVEL` | `info` | Niveau minimal de log : `debug`, `info`, `warn`, `error`. *(lu directement)* |
 
 ### Home Assistant
 
@@ -264,16 +287,16 @@ est chargé automatiquement au démarrage). Voir aussi `.env.example`.
 
 ### Transcription (voix)
 
-| Variable | Défaut | Description                                                                                |
-|----------|----|--------------------------------------------------------------------------------------------|
-| `TRANSCRIPTION_MODE` | `vosk` | `vosk` (local temps réel, Linux), `remote` (Whisper sur RPi), `local` (whisper.cpp).       |
-| `RASPBERRY_PI_IP` | `localhost` | IP du RPi, sert à construire `WHISPER_URL` si vide.                                        |
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `TRANSCRIPTION_MODE` | `vosk` | `vosk` (local temps réel, Linux), `remote` (Whisper sur RPi), `local` (whisper.cpp). |
+| `RASPBERRY_PI_IP` | `localhost` | IP du RPi, sert à construire `WHISPER_URL` si vide. |
 | `WHISPER_URL` | *(auto)* | Endpoint Whisper distant. Si vide : `http://$RASPBERRY_PI_IP:8000/v1/audio/transcriptions`. |
-| `VOSK_MODEL_PATH` | *(vide)* | Chemin du modèle Vosk (mode `vosk`).                                                       |
-| `WHISPER_BIN` | *(vide)* | Binaire whisper.cpp (mode `local`).                                                        |
-| `WHISPER_MODEL` | *(vide)* | Modèle `.bin` whisper.cpp (mode `local`).                                           |
-| `WHISPER_VAD_MODEL` | *(vide)* | Modèle VAD whisper.cpp (mode `local`).                                                     |
-| `VOSK_MODEL_NAME` | *vosk-model-small-fr-0.22* | Modèle VAD whisper.cpp (mode `vosk`).                                                      |
+| `VOSK_MODEL_PATH` | *(vide)* | Chemin du modèle Vosk (mode `vosk`). |
+| `WHISPER_BIN` | *(vide)* | Binaire whisper.cpp (mode `local`). |
+| `WHISPER_MODEL` | *(vide)* | Modèle `.bin` whisper.cpp (mode `local`). |
+| `WHISPER_VAD_MODEL` | *(vide)* | Modèle VAD whisper.cpp (mode `local`). |
+| `VOSK_MODEL_NAME` | `vosk-model-small-fr-0.22` | Nom du modèle Vosk téléchargé au premier démarrage. *(entrypoint Docker)* |
 
 ### Audio
 
@@ -284,15 +307,14 @@ est chargé automatiquement au démarrage). Voir aussi `.env.example`.
 
 ### Synthèse vocale (Piper)
 
-| Variable | Défaut                  | Description                          |
-|----------|-------------------------|--------------------------------------|
-| `PIPER_URL` | `http://localhost:5000` | Endpoint HTTP du serveur Piper.      |
-| `PIPER_BIN` | *(vide)*                | Binaire Piper (si lancement direct). |
-| `PIPER_MODEL` | *(vide)*                | Modèle de voix `.onnx`.              |
-| `PIPER_SERVER_LANG` | *fr*                    | Langue du modèle.                    |
-| `PIPER_SERVER_VOICE` | *fr_FR/siwis/medium*                | Path de l'API.                       |
-| `PIPER_SERVER_MODEL_NAME` | *fr_FR-siwis-medium*                | Modèle de voix `.onnx`.              |
-
+| Variable | Défaut | Description |
+|----------|---------|--------------------------------------|
+| `PIPER_URL` | `http://localhost:5000` | Endpoint HTTP du serveur Piper. |
+| `PIPER_BIN` | *(vide)* | Binaire Piper (si lancement direct). |
+| `PIPER_MODEL` | *(vide)* | Modèle de voix `.onnx`. |
+| `PIPER_SERVER_LANG` | `fr` | Langue du modèle. *(entrypoint Docker)* |
+| `PIPER_SERVER_VOICE` | `fr_FR/siwis/medium` | Path de l'API. *(entrypoint Docker)* |
+| `PIPER_SERVER_MODEL_NAME` | `fr_FR-siwis-medium` | Modèle de voix `.onnx`. *(entrypoint Docker)* |
 
 ### Modem / SMS (TCL LinkKey IK41)
 
@@ -325,13 +347,36 @@ est chargé automatiquement au démarrage). Voir aussi `.env.example`.
 | `ACTIVE_SERVER_HTTP` | `true` | Active l'API HTTP. |
 | `ACTIVE_PRESELECTION` | `true` | Présélection NLP des entités candidates. |
 
-### Configuration de désambiguïsation NLP
+### Désambiguïsation NLP
 
-| Variable | Défaut | Description                            |
+Quand plusieurs entités ont un score proche, l'assistant propose une liste et
+attend un choix. L'attente est mémorisée **par session** (canal) : la voix et un
+numéro SMS peuvent chacun avoir leur désambiguïsation en cours sans collision,
+et une attente expire au bout de **30 s**.
+
+| Variable | Défaut | Description |
 |----------|--------|----------------------------------------|
-| `DESAMBIGUISATION_ACTIVE` | `true` | Active la désambiguïsation.            |
-| `DESAMBIGUISATION_SEUIL` | `5`    | Seuil pour grouper les propositions    |
-| `DESAMBIGUISATION_MAX_CHOIX` | `3`    | Nombre de choix maximum dans les propositions |
+| `DESAMBIGUISATION_ACTIVE` | `true` | Active la désambiguïsation. |
+| `DESAMBIGUISATION_SEUIL` | `5` | Écart de score maximal pour grouper deux entités comme « équivalentes ». |
+| `DESAMBIGUISATION_MAX_CHOIX` | `3` | Nombre maximum d'options proposées. |
+
+### Pondération du scoring NLP
+
+Permet d'ajuster le matching entité ↔ commande sans recompiler. Les « malus »
+sont stockés positifs et soustraits dans le calcul.
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `SCORE_MINIMAL` | `30` | Score minimal pour qu'une entité soit retenue (sinon « pas compris »). |
+| `SCORE_BONUS_PIECE` | `100` | Bonus quand un mot correspond à une pièce connue. |
+| `SCORE_BONUS_MOT` | `20` | Bonus par mot du nom de l'entité reconnu (match exact). |
+| `SCORE_BONUS_FUZZY` | `15` | Bonus pour un match approximatif (Levenshtein). |
+| `SCORE_MALUS_PIECE_SEULE` | `80` | Malus si seule une pièce est matchée, sans mot spécifique. |
+| `SCORE_BONUS_LIEU_FONCTION` | `60` | Bonus si l'entité matche à la fois la pièce ET la fonction. |
+| `SCORE_BONUS_COUVERTURE_EXACTE` | `10` | Bonus si un nom multi-mots est entièrement couvert par la commande. |
+| `SCORE_MALUS_MOT_SUPERFLU` | `2` | Malus par mot du nom non prononcé. |
+| `SCORE_MALUS_ACTION_SANS_CIBLE` | `50` | Malus pour une action réduite à un seul mot (verbe sans cible). |
+
 ---
 
 ## Logs et internationalisation (i18n)
@@ -431,7 +476,7 @@ func (s *Service) Démarrer(ctx context.Context) error {
 
 // traiter : le service décide quoi faire (ici : analyse + réponse vocale).
 func (s *Service) traiter(texte string) {
-    reponse, verbe, _, isAction, appareil := s.analyseur.AnalyserEtExecuter(texte)
+    reponse, verbe, _, isAction, appareil := s.analyseur.AnalyserEtExecuter("test", texte)
     if appareil != nil && reponse != nil && isAction {
         s.speaker.Parler("assistant.retour.action", verbe, appareil.FriendlyName)
     }
@@ -478,7 +523,7 @@ func (s *service) Nom() string { return "mon-plugin" }
 func (s *service) Démarrer(ctx context.Context) error {
     // ... reçoit des entrées, puis :
     // s.env.Bus.Soumettre(func() {
-    //     reponse, _, _, _, _ := s.env.Analyseur.AnalyserEtExecuter(texte)
+    //     reponse, _, _, _, _ := s.env.Analyseur.AnalyserEtExecuter("mon-plugin", texte)
     //     // répondre via s.env.Speaker / s.env.Sender
     // })
     <-ctx.Done()
@@ -549,6 +594,23 @@ côté des autres :
 ```go
 Register(NewServiceSwitch(c))
 ```
+
+Un service Go peut aussi, **optionnellement**, implémenter :
+
+- `ScoreDomaine(estAction bool) int` — sa priorité de matching (selon que la
+  commande est une action ou une lecture). Le `estAction` est désormais
+  déterminé **par domaine** : il est vrai uniquement si *ce* domaine connaît un
+  verbe présent dans la phrase.
+- `EstActionParDefaut() bool` — `true` si une commande sans verbe explicite doit
+  quand même être traitée comme une action.
+- `ExtraireParams(texte) map[string]interface{}` — extraction de paramètres
+  propres au domaine (horizon météo, mode du résumé, pourcentage…).
+- `RecupererEtat(...)` + `EtatEnMessage(...)` — pour un domaine de **lecture**
+  qui construit son message en fragments i18n + params (voir météo / agenda).
+- `AppareilsVirtuels() []Appareil` — déclarer des entités virtuelles (heure,
+  date, météo…).
+- `Init(analyseur)` — recevoir l'analyseur une fois au démarrage (callbacks,
+  pré-chargements).
 
 ### 3. En plugin `.so` (chargement dynamique)
 
