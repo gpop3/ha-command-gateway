@@ -14,16 +14,19 @@ import (
 
 type ServiceAgenda struct {
 	serviceBase
-	catalogue []Appareil
+	analyseur Analyseur
 }
 
 func NewServiceAgenda(c *Client) *ServiceAgenda {
 	return &ServiceAgenda{serviceBase: newServiceBase("agenda", c, map[string]VerbeConfig{})}
 }
 
-// SetCatalogue met à jour le catalogue — appelé depuis l'analyseur après RafraichirCatalogue
-func (s *ServiceAgenda) SetCatalogue(catalogue []Appareil) {
-	s.catalogue = catalogue
+func (s *ServiceAgenda) Init(a Analyseur) { s.analyseur = a }
+
+func (s *ServiceAgenda) AppareilsVirtuels() []Appareil {
+	return []Appareil{{
+		EntityID: "agenda.home", FriendlyName: "agenda", FriendlyNameExact: "agenda", Domain: "agenda",
+	}}
 }
 
 func (s *ServiceAgenda) ScoreDomaine(_ bool) int { return 80 }
@@ -54,8 +57,11 @@ func (s *ServiceAgenda) MotsReconnus() []string {
 
 func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrier {
 	var tousEvenements []EvenementCalendrier
+	if s.analyseur == nil {
+		return tousEvenements
+	}
 
-	for _, app := range s.catalogue {
+	for _, app := range s.analyseur.GetCatalogue() {
 		if app.Domain != "calendar" {
 			continue
 		}

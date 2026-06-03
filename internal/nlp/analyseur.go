@@ -126,38 +126,15 @@ func (a *Analyseur) RafraichirCatalogue() error {
 		return err
 	}
 	a.catalogue = appareils
-	a.catalogue = append(a.catalogue,
-		ha.Appareil{
-			EntityID:          "time.local",
-			FriendlyName:      "heure",
-			FriendlyNameExact: "heure",
-			Domain:            "time",
-		},
-		ha.Appareil{
-			EntityID:          "time.local",
-			FriendlyName:      "date",
-			FriendlyNameExact: "date",
-			Domain:            "time",
-		},
-		ha.Appareil{
-			EntityID:          "weather.forecast_maison",
-			FriendlyName:      "météo",
-			FriendlyNameExact: "météo",
-			Domain:            "weather",
-		},
-		ha.Appareil{
-			EntityID:          "resume_maison.local",
-			FriendlyName:      "résumé maison",
-			FriendlyNameExact: "résumé maison",
-			Domain:            "resume_maison",
-		},
-		ha.Appareil{
-			EntityID:          "agenda.home",
-			FriendlyName:      "agenda",
-			FriendlyNameExact: "agenda",
-			Domain:            "agenda",
-		},
-	)
+
+	for _, domaine := range ha.ListDomaines() {
+		if svc, ok := ha.Lookup(domaine); ok {
+			if av, ok := svc.(ha.ServiceAvecAppareils); ok {
+				a.catalogue = append(a.catalogue, av.AppareilsVirtuels()...)
+			}
+		}
+	}
+
 	a.dernierRafraichissement = time.Now()
 
 	// Trier par domaine pour grouper les entités et accélérer le matching
@@ -165,24 +142,16 @@ func (a *Analyseur) RafraichirCatalogue() error {
 		return a.catalogue[i].Domain < a.catalogue[j].Domain
 	})
 
-	// Indexer par domaine
 	a.catalogueIndex = make(map[string][]ha.Appareil)
 	for _, app := range a.catalogue {
 		a.catalogueIndex[app.Domain] = append(a.catalogueIndex[app.Domain], app)
 	}
 
-	if svc, ok := ha.Lookup("agenda"); ok {
-		if agenda, ok := svc.(*ha.ServiceAgenda); ok {
-			agenda.SetCatalogue(a.catalogue)
-		}
-	}
-
-	if svc, ok := ha.Lookup("media_player"); ok {
-		if mp, ok := svc.(*ha.ServiceMediaPlayer); ok {
-			mp.SetTrouverEntite(func(texte string, estAction bool, domaines []string) (ha.Appareil, int) {
-				return a.TrouverMeilleurMatch(texte, estAction, domaines)
-			})
-			mp.ChargerSourcesSpotify()
+	for _, domaine := range ha.ListDomaines() {
+		if svc, ok := ha.Lookup(domaine); ok {
+			if initSvc, ok := svc.(ha.ServiceInitialisable); ok {
+				initSvc.Init(a)
+			}
 		}
 	}
 

@@ -9,7 +9,7 @@ import (
 type ServiceMediaPlayer struct {
 	serviceBase
 	spotifySources []string
-	trouverEntite  func(texte string, estAction bool, domaines []string) (Appareil, int)
+	analyseur      Analyseur
 }
 
 func NewServiceMediaPlayer(c *Client) *ServiceMediaPlayer {
@@ -34,7 +34,10 @@ func NewServiceMediaPlayer(c *Client) *ServiceMediaPlayer {
 
 // ChargerSourcesSpotify récupère la source_list depuis HA
 func (s *ServiceMediaPlayer) ChargerSourcesSpotify() {
-	meilleurMatch, _ := s.trouverEntite("spotify", true, []string{"media_player"})
+	if s.analyseur == nil {
+		return
+	}
+	meilleurMatch, _ := s.analyseur.TrouverMeilleurMatch("spotify", true, []string{"media_player"})
 	etat, err := s.client.RecupererEtatLive(meilleurMatch.EntityID)
 	if err != nil || len(etat.Attributes.SourceList) == 0 {
 		return
@@ -128,8 +131,10 @@ func (s *ServiceMediaPlayer) ExtraireParams(texte string) map[string]interface{}
 	return params
 }
 
-func (s *ServiceMediaPlayer) SetTrouverEntite(fn func(texte string, estAction bool, domaines []string) (Appareil, int)) {
-	s.trouverEntite = fn
+// Init reçoit l'analyseur (injecté au démarrage) et pré-charge les sources Spotify.
+func (s *ServiceMediaPlayer) Init(a Analyseur) {
+	s.analyseur = a
+	s.ChargerSourcesSpotify()
 }
 
 func (s *ServiceMediaPlayer) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
@@ -141,7 +146,7 @@ func (s *ServiceMediaPlayer) ExecuterCommande(app Appareil, verbe string, params
 
 	// "joue/lance spotify sur barre de son" → select_source sur le player Spotify
 	if src, ok := params["source"].(string); ok && (src == "spotify" || src == "musique") {
-		meilleurMatch, _ := s.trouverEntite("spotify", true, []string{"media_player"})
+		meilleurMatch, _ := s.analyseur.TrouverMeilleurMatch("spotify", true, []string{"media_player"})
 
 		body, err := s.appeler(meilleurMatch.EntityID, "media_play", nil)
 		if err != nil {

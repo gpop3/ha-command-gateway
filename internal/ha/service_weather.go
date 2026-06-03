@@ -339,3 +339,9 @@ func tradCondition(condition string) string {
 	}
 	return condition
 }
+
+func (s *ServiceWeather) AppareilsVirtuels() []Appareil {
+	return []Appareil{{
+		EntityID: "weather.forecast_maison", FriendlyName: "météo", FriendlyNameExact: "météo", Domain: "weather",
+	}}
+}

@@ -72,3 +72,11 @@ func (s *ServiceTime) repondre(params map[string]interface{}) string {
 func (s *ServiceTime) AutoriseMotsSansEntites() bool {
 	return true
 }
+
+func (s *ServiceTime) AppareilsVirtuels() []Appareil {
+	return []Appareil{
+		{EntityID: "time.local", FriendlyName: "heure", FriendlyNameExact: "heure", Domain: "time"},
+		{EntityID: "time.local", FriendlyName: "date", FriendlyNameExact: "date", Domain: "time"},
+		{EntityID: "time.local", FriendlyName: "jour", FriendlyNameExact: "jour", Domain: "time"},
+	}
+}

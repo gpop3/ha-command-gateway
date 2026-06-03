@@ -103,15 +103,18 @@ func init() {
 		"agenda.vide.mois":    "Rien de prévu ce mois.",
 
 		// ---- Résumé maison ----
-		"maison.resume":         "🏠 Résumé de la maison :\n",
-		"maison.temperatures":   "🌡️ Températures :\n",
-		"maison.temp.ligne":     "• %s : %s°C\n",
-		"maison.temp.climate":   "• %s : %.1f°C (consigne %.1f°C)\n",
-		"maison.temp.aucune":    "Aucun capteur de température trouvé.",
-		"maison.lumieres.on":    "💡 Lumières allumées : %s.",
-		"maison.lumieres.off":   "💡 Toutes les lumières sont éteintes.",
-		"maison.volets.ouverts": "🪟 Volets ouverts : %s.",
-		"maison.volets.fermes":  "🪟 Tous les volets sont fermés.",
+		"maison.resume":            "Résumé de la maison :\n",
+		"maison.temperatures":      "Températures :\n",
+		"maison.sms.temp.ligne":    "• %s : %s°C\n",
+		"maison.voix.temp.ligne":   "%s : %s degrés. ",
+		"maison.sms.temp.climate":  "• %s : %.1f°C (consigne %.1f°C)\n",
+		"maison.voix.temp.climate": "%s : %.1f degrés, consigne %.1f degrés. ",
+		"maison.temp.aucune":       "Aucun capteur de température trouvé.",
+		"maison.lumieres.on":       "Lumières allumées : %s.",
+		"maison.lumieres.off":      "Toutes les lumières sont éteintes.",
+		"maison.volets.ouverts":    "Volets ouverts : %s.",
+		"maison.volets.fermes":     "Tous les volets sont fermés.",
+		"maison.resume.concis":     "Maison : %d lumière(s) allumée(s), %d volet(s) ouvert(s).",
 
 		// ---- Cover ----
 		"cover.position.ok":     "✅ %s positionné à %d%%.",
