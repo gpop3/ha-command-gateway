@@ -2,6 +2,7 @@ package ha
 
 import (
 	"encoding/json"
+	"ha-command-gateway/internal/utils/text"
 	"strings"
 	"time"
 
@@ -28,23 +29,47 @@ func (s *ServiceWeather) ScoreDomaine(estAction bool) int { return 20 }
 
 func (s *ServiceWeather) EstActionParDefaut() bool { return false }
 
+var (
+	cibleApresDemain      = text.Normaliser("après-demain")
+	cibleApresDemainSpace = text.Normaliser("après demain")
+	cibleApresMidi        = text.Normaliser("après-midi")
+	cibleApresMidiSpace   = text.Normaliser("après midi")
+)
+
 func (s *ServiceWeather) ExtraireParams(texte string) map[string]interface{} {
+	res := map[string]interface{}{}
+
 	switch {
-	case strings.Contains(texte, "après-demain"):
-		return map[string]interface{}{"horizon": "daily", "jour": 2}
+	case strings.Contains(texte, cibleApresDemain) || strings.Contains(texte, cibleApresDemainSpace):
+		res["horizon"] = "daily"
+		res["jour"] = 2
 	case strings.Contains(texte, "demain"):
-		return map[string]interface{}{"horizon": "daily", "jour": 1}
-	case strings.Contains(texte, "week-end") || strings.Contains(texte, "weekend"):
-		return map[string]interface{}{"horizon": "weekend"}
+		res["horizon"] = "daily"
+		res["jour"] = 1
+	case strings.Contains(texte, "week end") || strings.Contains(texte, "weekend"):
+		res["horizon"] = "weekend"
 	case strings.Contains(texte, "semaine"):
-		return map[string]interface{}{"horizon": "semaine"}
-	case strings.Contains(texte, "heure") || strings.Contains(texte, "après-midi") ||
+		res["horizon"] = "semaine"
+	case strings.Contains(texte, "heure") || strings.Contains(texte, cibleApresMidi) ||
 		strings.Contains(texte, "soir") || strings.Contains(texte, "nuit") ||
-		strings.Contains(texte, "matin"):
-		return map[string]interface{}{"horizon": "hourly"}
+		strings.Contains(texte, "matin") || strings.Contains(texte, cibleApresMidiSpace):
+		res["horizon"] = "hourly"
+
+		switch {
+		case strings.Contains(texte, "matin"):
+			res["periode"] = "matin"
+		case strings.Contains(texte, "apres midi"):
+			res["periode"] = cibleApresMidi
+		case strings.Contains(texte, "soir"):
+			res["periode"] = "soir"
+		case strings.Contains(texte, "nuit"):
+			res["periode"] = "nuit"
+		}
 	default:
-		return map[string]interface{}{"horizon": "current"}
+		res["horizon"] = "current"
 	}
+
+	return res
 }
 
 func (s *ServiceWeather) MotsReconnus() []string {
@@ -64,6 +89,7 @@ type MeteoData struct {
 	Vent       float64
 	Jour       int
 	Previsions []PrevisionHoraire
+	Periode    string
 }
 
 func (s *ServiceWeather) RecupererEtat(app Appareil, dateCible time.Time, params map[string]interface{}) (*EtatComplet, any, error) {
@@ -131,12 +157,46 @@ func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) 
 			return i18n.GetPattern("meteo.indispo"), nil
 		}
 		sb.WriteString(i18n.GetPattern("meteo.previsions"))
+
+		maintenant := time.Now()
+		nbAffiches := 0
 		maxP := 6
-		if len(d.Previsions) < maxP {
-			maxP = len(d.Previsions)
-		}
-		for _, p := range d.Previsions[:maxP] {
-			t, _ := time.Parse(time.RFC3339, p.DateTime)
+
+		for _, p := range d.Previsions {
+			tUTC, err := time.Parse(time.RFC3339, p.DateTime)
+			if err != nil {
+				continue
+			}
+			t := tUTC.Local()
+
+			if t.Before(maintenant.Add(-30 * time.Minute)) {
+				continue
+			}
+
+			if d.Periode != "" {
+				heure := t.Hour()
+				valide := false
+
+				switch d.Periode {
+				case "matin":
+					valide = (heure >= 6 && heure < 12)
+				case cibleApresMidi:
+					valide = (heure >= 12 && heure < 18)
+				case "soir":
+					valide = (heure >= 18 && heure < 23)
+				case "nuit":
+					valide = (heure >= 23 || heure < 6)
+				}
+
+				if !valide {
+					continue
+				}
+
+				if d.Periode != "nuit" && t.Day() != maintenant.Day() {
+					continue
+				}
+			}
+
 			sb.WriteString(i18n.GetPattern("meteo.heure.ligne"))
 			params = append(params, t.Format("15h04"), tradCondition(p.Condition), p.Temperature)
 			if p.Precipitation > 0 {
@@ -144,6 +204,15 @@ func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) 
 				params = append(params, p.Precipitation)
 			}
 			sb.WriteString("\n")
+
+			nbAffiches++
+			if nbAffiches >= maxP {
+				break
+			}
+		}
+
+		if nbAffiches == 0 {
+			return i18n.GetPattern("meteo.indispo"), nil
 		}
 
 	case "semaine", "weekend":
