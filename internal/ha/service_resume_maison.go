@@ -1,6 +1,7 @@
 package ha
 
 import (
+	"ha-command-gateway/internal/utils/text"
 	"strings"
 	"time"
 
@@ -28,11 +29,11 @@ func (s *ServiceResumeMaison) AppareilsVirtuels() []Appareil {
 
 func (s *ServiceResumeMaison) ExtraireParams(texte string) map[string]interface{} {
 	params := map[string]interface{}{"mode": "complet"}
-	if strings.Contains(texte, "température") {
+	if strings.Contains(texte, text.Normaliser("température")) {
 		params["mode"] = "temperatures"
-	} else if strings.Contains(texte, "lumière") || strings.Contains(texte, "allumé") {
+	} else if strings.Contains(texte, text.Normaliser("lumière")) {
 		params["mode"] = "lumieres"
-	} else if strings.Contains(texte, "volet") {
+	} else if strings.Contains(texte, text.Normaliser("volet")) {
 		params["mode"] = "volets"
 	}
 	return params

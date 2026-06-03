@@ -114,7 +114,7 @@ func init() {
 		"maison.lumieres.off":      "Toutes les lumières sont éteintes.",
 		"maison.volets.ouverts":    "Volets ouverts : %s.",
 		"maison.volets.fermes":     "Tous les volets sont fermés.",
-		"maison.resume.concis":     "Maison : %d lumière(s) allumée(s), %d volet(s) ouvert(s).",
+		"maison.resume.concis":     "Maison : %d lumières allumées, %d volets ouverts.",
 
 		// ---- Cover ----
 		"cover.position.ok":     "✅ %s positionné à %d%%.",
