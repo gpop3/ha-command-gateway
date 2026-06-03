@@ -170,7 +170,7 @@ func (s *Service) traiter(inputText string) {
 
 		match := false
 		if len(filtres) > 0 {
-			match = s.executer(strings.Join(filtres, " "))
+			match = s.executer(strings.Join(filtres, " "), true)
 		}
 		switch {
 		case len(filtres) == 0 || !match:
@@ -188,7 +188,7 @@ func (s *Service) traiter(inputText string) {
 			prochainEtat = modeCommand
 			return
 		}
-		s.executer(inputText)
+		s.executer(inputText, false)
 		if s.analyseur.AttenteDeChoix("voix") {
 			s.dernierMode = time.Now()
 			prochainEtat = modeCommand
@@ -197,14 +197,16 @@ func (s *Service) traiter(inputText string) {
 }
 
 // executer analyse la commande et restitue la réponse à la voix.
-func (s *Service) executer(inputText string) bool {
+func (s *Service) executer(inputText string, muteEnCasDerreur bool) bool {
 	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("voix", inputText)
 	switch {
 	case appareil == nil || reponse == nil:
 		if match {
 			s.Parler("assistant.retour.erreur")
 		} else {
-			s.Parler("assistant.retour.pas.compris")
+			if !muteEnCasDerreur {
+				s.Parler("assistant.retour.pas.compris")
+			}
 		}
 	case isAction:
 		s.Parler("assistant.retour.action", verbe, appareil.FriendlyName)

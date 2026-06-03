@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ha-command-gateway/internal/i18n"
+	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/pkg/types"
 )
 
@@ -33,6 +34,10 @@ func (s *ServiceWeather) ExtraireParams(texte string) map[string]interface{} {
 		return map[string]interface{}{"horizon": "daily", "jour": 2}
 	case strings.Contains(texte, "demain"):
 		return map[string]interface{}{"horizon": "daily", "jour": 1}
+	case strings.Contains(texte, "week-end") || strings.Contains(texte, "weekend"):
+		return map[string]interface{}{"horizon": "weekend"}
+	case strings.Contains(texte, "semaine"):
+		return map[string]interface{}{"horizon": "semaine"}
 	case strings.Contains(texte, "heure") || strings.Contains(texte, "après-midi") ||
 		strings.Contains(texte, "soir") || strings.Contains(texte, "nuit") ||
 		strings.Contains(texte, "matin"):
@@ -46,7 +51,7 @@ func (s *ServiceWeather) MotsReconnus() []string {
 	return []string{
 		"maintenant", "demain", "après-demain", "aujourd'hui",
 		"ce matin", "cet après-midi", "ce soir", "cette nuit",
-		"prochaine heure", "heure", "semaine", "weekend",
+		"prochaine heure", "heure", "semaine", "week-end", "weekend",
 	}
 }
 
@@ -69,23 +74,30 @@ func (s *ServiceWeather) RecupererEtat(app Appareil, dateCible time.Time, params
 	case "hourly":
 		prev, err := s.getPrevisions(app.EntityID, "hourly")
 		if err != nil {
+			logx.ErrorT("meteo.erreur.previsions", app.EntityID, "hourly", err)
 			return nil, nil, err
 		}
 		data.Previsions = prev
-	case "daily":
-		jour, _ := params["jour"].(int)
-		if jour < 1 {
-			jour = 1
+
+	case "daily", "semaine", "weekend":
+		if horizon == "daily" {
+			jour, _ := params["jour"].(int)
+			if jour < 1 {
+				jour = 1
+			}
+			data.Jour = jour
 		}
-		data.Jour = jour
 		prev, err := s.getPrevisions(app.EntityID, "daily")
 		if err != nil {
+			logx.ErrorT("meteo.erreur.previsions", app.EntityID, "daily", err)
 			return nil, nil, err
 		}
 		data.Previsions = prev
+
 	default:
 		etat, err := s.client.RecupererEtatLive(app.EntityID)
 		if err != nil {
+			logx.ErrorT("meteo.erreur.actuel", app.EntityID, err)
 			return nil, nil, err
 		}
 		data.Condition = etat.State
@@ -99,10 +111,8 @@ func (s *ServiceWeather) RecupererEtat(app Appareil, dateCible time.Time, params
 func (s *ServiceWeather) EtatEnMessage(app Appareil, etat *EtatComplet, etatCustom any, dateCible time.Time) types.Message {
 	data, ok := etatCustom.(MeteoData)
 	if !ok {
-		return types.Message{
-			SMS:  types.MessageDetails{Texte: i18n.T("erreur.lecture.parler"), Params: []interface{}{}},
-			Voix: types.MessageDetails{Texte: i18n.T("erreur.lecture.parler"), Params: []interface{}{}},
-		}
+		logx.ErrorT("meteo.erreur.etatcustom", etatCustom)
+		return messageErreurMeteo()
 	}
 	message, params := s.construireMessage(data)
 	return types.Message{
@@ -135,6 +145,38 @@ func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) 
 			}
 			sb.WriteString("\n")
 		}
+
+	case "semaine", "weekend":
+		if len(d.Previsions) == 0 {
+			return i18n.GetPattern("meteo.demain.indispo"), nil
+		}
+		if d.Horizon == "weekend" {
+			sb.WriteString(i18n.GetPattern("meteo.weekend"))
+		} else {
+			sb.WriteString(i18n.GetPattern("meteo.semaine"))
+		}
+		nb := 0
+		for _, p := range d.Previsions {
+			t := parseJour(p.DateTime)
+			if t.IsZero() {
+				continue
+			}
+			if d.Horizon == "weekend" && t.Weekday() != time.Saturday && t.Weekday() != time.Sunday {
+				continue
+			}
+			sb.WriteString(i18n.GetPattern("meteo.jour.ligne"))
+			params = append(params, joursFR[t.Weekday()], tradCondition(p.Condition), p.Temperature)
+			if p.Precipitation > 0 {
+				sb.WriteString(i18n.GetPattern("meteo.precipitation"))
+				params = append(params, p.Precipitation)
+			}
+			sb.WriteString("\n")
+			nb++
+			if d.Horizon == "semaine" && nb >= 7 {
+				break
+			}
+		}
+
 	case "daily":
 		if len(d.Previsions) <= d.Jour {
 			return i18n.GetPattern("meteo.demain.indispo"), nil
@@ -150,6 +192,7 @@ func (s *ServiceWeather) construireMessage(d MeteoData) (string, []interface{}) 
 			sb.WriteString(i18n.GetPattern("meteo.demain.vent"))
 			params = append(params, p.WindSpeed)
 		}
+
 	default:
 		sb.WriteString(i18n.GetPattern("meteo.actuelle"))
 		params = append(params, tradCondition(d.Condition), d.Temp)
@@ -183,6 +226,23 @@ func (s *ServiceWeather) getPrevisions(entityID, forecastType string) ([]Previsi
 		return data.Forecast, nil
 	}
 	return nil, nil
+}
+
+func parseJour(s string) time.Time {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+func messageErreurMeteo() types.Message {
+	return types.Message{
+		SMS:  types.MessageDetails{Texte: i18n.T("erreur.lecture.parler"), Params: []interface{}{}},
+		Voix: types.MessageDetails{Texte: i18n.T("erreur.lecture.parler"), Params: []interface{}{}},
+	}
 }
 
 func tradCondition(condition string) string {

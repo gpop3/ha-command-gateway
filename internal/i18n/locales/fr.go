@@ -66,16 +66,23 @@ func init() {
 		"time.complet": "Il est %s heure %s, le %s %s %s %s.",
 
 		// ---- Météo ----
-		"meteo.actuelle":       "🌤️ Météo actuelle : %s, %.0f°C",
+		"meteo.actuelle":       "Météo actuelle : %s, %.0f°C",
 		"meteo.humidite":       ", humidité %d%%",
 		"meteo.vent":           ", vent %.0f km/h",
-		"meteo.previsions":     "🕐 Prévisions pour les prochaines heures :\n",
+		"meteo.previsions":     "Prévisions pour les prochaines heures :\n",
 		"meteo.heure.ligne":    "• %s : %s, %.0f°C",
 		"meteo.precipitation":  ", %.1f mm",
-		"meteo.demain":         "📅 Demain : %s, %.0f°C",
+		"meteo.demain":         "Demain : %s, %.0f°C",
 		"meteo.demain.vent":    ", vent %.0f km/h",
 		"meteo.indispo":        "Aucune prévision disponible.",
 		"meteo.demain.indispo": "Prévision de demain non disponible.",
+		"meteo.semaine":        "Prévisions de la semaine :\n",
+		"meteo.weekend":        "Prévisions du week-end :\n",
+		"meteo.jour.ligne":     "• %s : %s, %.0f°C",
+
+		"meteo.erreur.previsions": "météo: échec récupération prévisions %s (%s) : %v",
+		"meteo.erreur.actuel":     "météo: échec récupération état actuel %s : %v",
+		"meteo.erreur.etatcustom": "météo: type etatCustom inattendu : %v",
 
 		// ---- Agenda ----
 		"agenda.aujourd.hui":  "Aujourd'hui :\n",
