@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/nlp"
 )
 
@@ -24,17 +26,21 @@ type Reponse struct {
 
 // Traiter analyse un texte, exécute l'action correspondante via l'analyseur
 func (s *ConversationService) Traiter(texte string) Reponse {
-	msg, verbe, traite, _, appareil := s.analyseur.AnalyserEtExecuter("http", texte)
+	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("http", texte)
 
-	r := Reponse{Handled: traite, Verbe: verbe}
+	r := Reponse{Handled: match, Verbe: verbe}
 	if appareil != nil {
 		r.Appareil = appareil.EntityID
 	}
-	if msg != nil {
-		r.Speech = msg.Voix.Texte
-		if r.Speech == "" {
-			r.Speech = msg.SMS.Texte
-		}
+
+	switch {
+	case isAction:
+		r.Speech = reponse.SMS.Texte
+	case i18n.Existe(reponse.SMS.Texte):
+		r.Speech = i18n.T(reponse.SMS.Texte, reponse.SMS.Params...)
+	default:
+		r.Speech = fmt.Sprintf(reponse.SMS.Texte, reponse.SMS.Params...)
 	}
+
 	return r
 }
