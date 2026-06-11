@@ -3,7 +3,7 @@
   "name": "Gateway Assist",
   "version": "0.1.0",
   "config_flow": true,
-  "documentation": "https://github.com/glepaul/ha-command-gateway",
+  "documentation": "https://github.com/gpop3/ha-command-gateway",
   "dependencies": ["conversation"],
   "codeowners": ["@gpop3"],
   "iot_class": "local_polling",
