@@ -15,6 +15,7 @@ func init() {
 		"ok.action":             "✅ L'ordre a été exécuté sur : %s.",
 		"ok.message":            "✅ %s",
 		"erreur.lecture.parler": "Erreur lecture",
+		"conversation.recue":    "Conversation reçue : %s",
 
 		// ---- assistant ----
 		"assistant.pret":      "🚀 Assistant prêt (Voix + SMS + Console).",

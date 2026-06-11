@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ha-command-gateway/internal/nlp"
 	"net/http"
 	"time"
 
@@ -18,11 +19,15 @@ type Server struct {
 }
 
 // New crée le serveur et enregistre les contrôleurs disponibles
-func New(port int, apiKey string, sender core.SMSSender) *Server {
+func New(port int, apiKey string, sender core.SMSSender, analyseur *nlp.Analyseur) *Server {
 	s := &Server{mux: http.NewServeMux(), port: port}
 	if sender != nil {
 		smsSvc := NewSMSService(sender)
 		s.register(NewSMSController(smsSvc, apiKey))
+	}
+	if analyseur != nil {
+		convSvc := NewConversationService(analyseur)
+		s.register(NewConversationController(convSvc, apiKey))
 	}
 	return s
 }

@@ -94,7 +94,7 @@ func main() {
 
 	// API HTTP
 	if cfg.ActiveServerHttp {
-		mgr.Register(api.New(cfg.APIPort, cfg.APIKey, apiSender))
+		mgr.Register(api.New(cfg.APIPort, cfg.APIKey, apiSender, analyseur))
 	}
 
 	// Plugins .so (services tiers)
