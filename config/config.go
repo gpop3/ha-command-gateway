@@ -112,6 +112,17 @@ type Config struct {
 	// Garde-fous
 	IAConfirmation     bool   // confirmation orale avant un SMS ou une automatisation
 	IANumerosAutorises string // numéros que l'IA peut viser (défaut : WHITELIST)
+
+	// Quotas locaux et robustesse (0 = illimité)
+	GeminiMaxRequetesMinute int
+	GeminiMaxRequetesJour   int
+	GeminiMaxTokensMinute   int
+	GeminiDelaiMinMs        int  // délai minimal entre deux appels
+	GeminiSecondeChance     bool // rappeler l'IA une fois quand le code rejette sa réponse
+	GeminiAnalyse           bool // analyse en deux appels (l'IA commente les données lues par le code)
+
+	// Briefing à la demande
+	BriefingCalendrierRepas string // mot-clé des calendriers de repas (défaut : mealie ; vide = pas de section repas)
 }
 
 // Load charge la config depuis les variables d'environnement, avec des valeurs par défaut
@@ -221,6 +232,14 @@ func Load() *Config {
 		GeminiMemoireSecondes: getEnvInt("GEMINI_MEMOIRE_SECONDES", 180),
 		IAConfirmation:        getEnv("IA_CONFIRMATION", "true") == "true",
 		IANumerosAutorises:    getEnv("IA_NUMEROS_AUTORISES", ""),
+
+		GeminiMaxRequetesMinute: getEnvInt("GEMINI_MAX_REQUETES_MINUTE", 0),
+		GeminiMaxRequetesJour:   getEnvInt("GEMINI_MAX_REQUETES_JOUR", 0),
+		GeminiMaxTokensMinute:   getEnvInt("GEMINI_MAX_TOKENS_MINUTE", 0),
+		GeminiDelaiMinMs:        getEnvInt("GEMINI_DELAI_MIN_MS", 2000),
+		GeminiSecondeChance:     getEnv("GEMINI_SECONDE_CHANCE", "true") == "true",
+		GeminiAnalyse:           getEnv("GEMINI_ANALYSE", "true") == "true",
+		BriefingCalendrierRepas: getEnv("BRIEFING_CALENDRIER_REPAS", "mealie"),
 	}
 
 	// Construction automatique du whisperURL si non fourni

@@ -1,6 +1,7 @@
 package nlp
 
 import (
+	"errors"
 	"encoding/json"
 	"ha-command-gateway/internal/core/adapters/gemini"
 	"ha-command-gateway/internal/i18n"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -366,7 +368,8 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 		a.effacerConfirmation(session)
 		switch interpreterConfirmation(nettoye) {
 		case reponseOui:
-			return a.executerActionsGemini(session, conf.rep, true)
+			msg, verbe, match, isAction, app, _ := a.executerActionsGemini(session, conf.texte, conf.rep, true)
+			return msg, verbe, match, isAction, app
 		case reponseNon:
 			msg := messageTexte(i18n.T("confirmation.annule"))
 			return &msg, "", true, false, nil
@@ -867,6 +870,8 @@ const (
 	maxPlageAgenda = 120 * 24 * time.Hour
 	// maxPlageHistorique borne la période d'historique demandée par l'IA
 	maxPlageHistorique = 31 * 24 * time.Hour
+	// maxPlageClassement borne la période d'un classement de capteurs (lecture groupée)
+	maxPlageClassement = 7 * 24 * time.Hour
 )
 
 // messageTexte construit un message à partir d'un texte libre (réponse de l'IA).
@@ -880,7 +885,22 @@ func messageTexte(texte string) types.Message {
 	}
 }
 
-// trouverAppareil cherche une entité par son entity_id dans le catalogue.
+// reEntityID : forme valide d'un entity_id (évite d'injecter n'importe quoi dans une URL HA).
+var reEntityID = regexp.MustCompile(`^[a-z0-9_]+\.[a-z0-9_]+$`)
+
+// domaineDeEntite : le domaine fait foi dans l'entity_id (« media_player.xxx »), pas
+// dans le champ « domain » que l'IA remplit parfois de travers.
+func domaineDeEntite(entityID, parDefaut string) string {
+	if i := strings.Index(entityID, "."); i > 0 {
+		return entityID[:i]
+	}
+	return parDefaut
+}
+
+// trouverAppareil cherche une entité par son entity_id : d'abord dans le catalogue
+// local, puis — si elle en est absente (catalogue périmé, entité sans friendly_name...)
+// — directement auprès de HA, qui fait foi. Une entité qui n'existe pas dans HA
+// n'est jamais retournée.
 func (a *Analyseur) trouverAppareil(entityID string) *ha.Appareil {
 	for _, cand := range a.catalogue {
 		if cand.EntityID == entityID {
@@ -888,15 +908,37 @@ func (a *Analyseur) trouverAppareil(entityID string) *ha.Appareil {
 			return &c
 		}
 	}
-	return nil
+
+	if !reEntityID.MatchString(entityID) {
+		return nil
+	}
+	etat, err := a.haClient.RecupererEtatLive(entityID)
+	if err != nil || etat == nil || etat.EntityID != entityID {
+		return nil
+	}
+	logx.DebugT("gemini.entite.hors.catalogue", entityID)
+	nom := etat.Attributes.FriendlyName
+	if nom == "" {
+		nom = entityID
+	}
+	return &ha.Appareil{
+		EntityID:          entityID,
+		FriendlyName:      nom,
+		FriendlyNameExact: nom,
+		State:             etat.State,
+		Domain:            strings.SplitN(entityID, ".", 2)[0],
+	}
 }
 
 // tenterGemini interroge l'IA et valide strictement sa réponse avant toute
-// exécution : Gemini propose, le code décide. Trois types de réponse :
+// exécution : Gemini propose, le code décide. Quatre types de réponse :
 //   - speak  : réponse parlée (état lu dans le contexte, discussion) ;
 //   - read   : lecture via les services HA (météo future, agenda passé/futur, heure...) ;
 //   - history : état d'une entité dans le passé (historique HA sur une période) ;
 //   - action : une ou plusieurs commandes (« ouvre salon 1 et 2 »).
+//
+// Si le code rejette la réponse (entité inconnue, verbe invalide...), Gemini a une
+// seconde chance : on lui renvoie les motifs précis du rejet pour qu'il se corrige.
 func (a *Analyseur) tenterGemini(session, texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
 	_ = a.RafraichirCatalogue()
 
@@ -915,52 +957,115 @@ func (a *Analyseur) tenterGemini(session, texte string) (*types.Message, string,
 		return nil, "", false, false, nil
 	}
 
-	rep, err := a.gemini.Interroger(a.historiquePour(session), texte, contexte, string(capacites))
+	historique := a.historiquePour(session)
+	rep, err := a.gemini.Interroger(historique, texte, contexte, string(capacites))
 	if err != nil {
-		logx.WarnT("gemini.appel.erreur", err)
+		a.journaliserErreurIA(err)
 		return nil, "", false, false, nil
 	}
-	a.memoriser(session, texte, rep)
 
+	msg, verbe, match, isAction, app, rejets := a.traiterReponseGemini(session, texte, rep)
+
+	// Seconde chance : on explique à Gemini pourquoi sa réponse a été rejetée
+	if !match && len(rejets) > 0 && a.ia.SecondeChance {
+		motifs := strings.Join(rejets, " ; ")
+		logx.InfoT("gemini.seconde.chance", motifs)
+		brut, _ := json.Marshal(rep)
+		hist2 := append(append([]gemini.Tour(nil), historique...), gemini.Tour{Demande: texte, Reponse: string(brut)})
+		rep2, err2 := a.gemini.Reinterroger(hist2, i18n.T("gemini.correction", motifs), contexte, string(capacites))
+		if err2 != nil {
+			a.journaliserErreurIA(err2)
+		} else {
+			rep = rep2
+			msg, verbe, match, isAction, app, _ = a.traiterReponseGemini(session, texte, rep)
+		}
+	}
+
+	a.memoriser(session, texte, rep)
+	return msg, verbe, match, isAction, app
+}
+
+// journaliserErreurIA : les erreurs « attendues » (quota local, disjoncteur ouvert,
+// anti-rafale) restent discrètes pour ne pas inonder les logs pendant une panne.
+func (a *Analyseur) journaliserErreurIA(err error) {
+	if errors.Is(err, gemini.ErrQuota) || errors.Is(err, gemini.ErrIndisponible) || errors.Is(err, gemini.ErrAntiRafale) {
+		logx.DebugT("gemini.appel.ignore", err)
+		return
+	}
+	logx.WarnT("gemini.appel.erreur", err)
+}
+
+// traiterReponseGemini exécute une réponse de l'IA. Le dernier retour liste les
+// motifs de rejet (s'il y en a) : il alimente la seconde chance.
+func (a *Analyseur) traiterReponseGemini(session, texte string, rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
 	switch rep.Type {
 	case "speak":
 		if rep.AttendReponse {
 			a.definirEcoute(session)
 		}
 		msg := messageTexte(rep.ReponseVocale)
-		return &msg, "", true, false, nil
+		return &msg, "", true, false, nil, nil
 	case "read":
-		return a.executerLecturesGemini(rep)
+		return a.executerLecturesGemini(texte, rep)
 	case "history":
-		return a.executerHistoriqueGemini(rep)
+		return a.executerHistoriqueGemini(texte, rep)
+	case "classement":
+		return a.executerClassementGemini(texte, rep)
 	case "action":
-		return a.executerActionsGemini(session, rep, false)
+		return a.executerActionsGemini(session, texte, rep, false)
 	}
-	return nil, "", false, false, nil
+	return nil, "", false, false, nil, nil
+}
+
+// raisonEntite explique pourquoi une entité proposée par l'IA est refusée (motif
+// renvoyé à Gemini pour sa seconde chance). Chaîne vide si elle est acceptable.
+func raisonEntite(act gemini.Action, app *ha.Appareil) string {
+	switch {
+	case app == nil:
+		return i18n.T("gemini.rejet.entite", act.EntityID)
+	case app.Domain != act.Domain:
+		return i18n.T("gemini.rejet.domaine", act.EntityID, app.Domain, act.Domain)
+	case ha.DomaineExcluIA(app.Domain):
+		return i18n.T("gemini.rejet.exclu", app.Domain)
+	}
+	return ""
 }
 
 // validerActionIA vérifie qu'une action proposée par l'IA est légitime : entité
 // existante du bon domaine, domaine non interdit, verbe connu, action autorisée.
-func (a *Analyseur) validerActionIA(act gemini.Action) (*ha.Appareil, ha.Service, string, bool) {
+// En cas de refus, l'erreur porte le motif (renvoyé à Gemini).
+func (a *Analyseur) validerActionIA(act gemini.Action) (*ha.Appareil, ha.Service, string, error) {
+	act.Domain = domaineDeEntite(act.EntityID, act.Domain)
 	app := a.trouverAppareil(act.EntityID)
-	if app == nil || app.Domain != act.Domain || ha.DomaineExcluIA(app.Domain) {
-		logx.WarnT("gemini.entite.rejetee", act.EntityID)
-		return nil, nil, "", false
+	if raison := raisonEntite(act, app); raison != "" {
+		switch {
+		case app == nil:
+			logx.WarnT("gemini.entite.introuvable", act.EntityID)
+		case app.Domain != act.Domain:
+			logx.WarnT("gemini.entite.domaine", act.EntityID, act.Domain, app.Domain)
+		default:
+			logx.WarnT("gemini.domaine.exclu", app.Domain, act.EntityID)
+		}
+		return nil, nil, "", errors.New(raison)
 	}
 	svc, ok := ha.Lookup(act.Domain)
 	if !ok {
-		return nil, nil, "", false
+		return nil, nil, "", errors.New(i18n.T("gemini.rejet.domaine.inconnu", act.Domain))
 	}
-	action, vok := svc.Verbe(act.Verbe)
+	verbe := strings.TrimSpace(act.Verbe)
+	if verbe == "" && act.Domain == "script" {
+		verbe = "exécute" // un script n'a qu'une action possible : l'IA peut omettre le verbe
+	}
+	action, vok := svc.Verbe(verbe)
 	if !vok {
 		logx.WarnT("gemini.verbe.rejete", act.Verbe, act.Domain)
-		return nil, nil, "", false
+		return nil, nil, "", errors.New(i18n.T("gemini.rejet.verbe", act.Verbe, act.Domain, strings.Join(ha.CapacitesIA()[act.Domain].Verbes, ", ")))
 	}
 	if !ha.ActionIAAutorisee(act.Domain, action) {
 		logx.WarnT("gemini.action.interdite", action, act.Domain)
-		return nil, nil, "", false
+		return nil, nil, "", errors.New(i18n.T("gemini.rejet.action", action, act.Domain))
 	}
-	return app, svc, action, true
+	return app, svc, action, nil
 }
 
 // parametresBruts convertit la liste {nom, valeur} de l'IA en map.
@@ -983,20 +1088,92 @@ type actionPreparee struct {
 	params map[string]interface{}
 }
 
+// succesAction : une action exécutée avec succès (sert à formuler le retour parlé).
+type succesAction struct {
+	verbe  string
+	nom    string
+	params map[string]interface{}
+}
+
+func nomAppareil(app ha.Appareil) string {
+	if app.FriendlyNameExact != "" {
+		return app.FriendlyNameExact
+	}
+	return app.FriendlyName
+}
+
+// listeNoms : « A », « A et B », « A, B et C ».
+func listeNoms(noms []string) string {
+	switch len(noms) {
+	case 0:
+		return ""
+	case 1:
+		return noms[0]
+	}
+	return strings.Join(noms[:len(noms)-1], ", ") + " " + i18n.T("mot.et") + " " + noms[len(noms)-1]
+}
+
+// phraseSucces formule ce qui a été fait, en français naturel (voix comme SMS) :
+// « J'ai éteint Salon et Cuisine. J'ai fermé Volet salon. »
+func phraseSucces(succes []succesAction) string {
+	var ordre []string
+	noms := map[string][]string{}
+	var phrases []string
+
+	for _, s := range succes {
+		// Réglage chiffré : « Volet salon réglé à 50 pour cent. »
+		if pct, ok := s.params["pourcentage"].(int); ok {
+			phrases = append(phrases, i18n.T("retour.pourcentage", s.nom, pct))
+			continue
+		}
+		if t, ok := s.params["temperature"].(float64); ok {
+			phrases = append(phrases, i18n.T("retour.temperature", s.nom, strings.ReplaceAll(strconv.FormatFloat(t, 'f', -1, 64), ".", ",")))
+			continue
+		}
+		v := strings.ToLower(strings.TrimSpace(s.verbe))
+		if _, vu := noms[v]; !vu {
+			ordre = append(ordre, v)
+		}
+		dejaLa := false
+		for _, n := range noms[v] {
+			if n == s.nom {
+				dejaLa = true
+			}
+		}
+		if !dejaLa {
+			noms[v] = append(noms[v], s.nom)
+		}
+	}
+
+	groupes := make([]string, 0, len(ordre))
+	for _, v := range ordre {
+		cle := "retour.verbe." + v
+		if i18n.Existe(cle) {
+			groupes = append(groupes, i18n.T(cle, listeNoms(noms[v])))
+		} else {
+			groupes = append(groupes, i18n.T("retour.action.generique", listeNoms(noms[v])))
+		}
+	}
+	return strings.Join(append(groupes, phrases...), " ")
+}
+
 // executerActionsGemini valide puis exécute une ou plusieurs actions proposées par
 // l'IA. Garde-fous : numéros de téléphone autorisés seulement, et confirmation orale
 // avant un SMS ou une automatisation (sauf si `confirme`, c'est-à-dire déjà confirmée).
-func (a *Analyseur) executerActionsGemini(session string, rep *gemini.Reponse, confirme bool) (*types.Message, string, bool, bool, *ha.Appareil) {
+// Le dernier retour liste les motifs de rejet (seconde chance de l'IA).
+func (a *Analyseur) executerActionsGemini(session, texte string, rep *gemini.Reponse, confirme bool) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
 	actions := rep.Actions
 	if len(actions) > maxActionsGemini {
 		actions = actions[:maxActionsGemini]
 	}
 
 	var prepares []actionPreparee
+	var rejets []string
 	numeroRefuse := false
 	for _, act := range actions {
-		app, svc, action, ok := a.validerActionIA(act)
-		if !ok {
+		app, svc, action, err := a.validerActionIA(act)
+		if err != nil {
+			rejets = append(rejets, err.Error())
 			continue
 		}
 
@@ -1006,6 +1183,25 @@ func (a *Analyseur) executerActionsGemini(session string, rep *gemini.Reponse, c
 		}
 		for k, v := range a.haClient.ParametresIAValides(*app, parametresBruts(act)) {
 			params[k] = v
+		}
+		if app.Domain == "media_player" {
+			// Permet de retrouver l'enceinte cible dans la phrase si l'IA ne l'a pas précisée
+			params["texte"] = texte
+		}
+		if app.Domain == "script" {
+			params["ia"] = true // contrôle des champs obligatoires côté service
+			// Script sans champ déclaré : le texte à transmettre est repris du complément de l'IA
+			if _, ok := params["message"]; !ok && len(a.haClient.ChampsScript(app.EntityID)) == 0 {
+				if c := strings.TrimSpace(act.Complement); c != "" {
+					params["message"] = c
+				}
+			}
+			// Un SMS sans message : on le demande au lieu de lancer le script à vide
+			if estScriptSMS(*app) && !contenuFourni(params) {
+				a.definirEcoute(session)
+				msg := messageTexte(i18n.T("gemini.sms.message.manquant"))
+				return &msg, "", true, false, app, nil
+			}
 		}
 
 		if !a.destinatairesAutorises(app.Domain, params) {
@@ -1019,10 +1215,10 @@ func (a *Analyseur) executerActionsGemini(session string, rep *gemini.Reponse, c
 	if len(prepares) == 0 {
 		if numeroRefuse {
 			msg := messageTexte(i18n.T("garde.numero.refuse"))
-			return &msg, "", true, false, nil
+			return &msg, "", true, false, nil, nil
 		}
-		// Rien de valide : on laisse la main au NLP classique
-		return nil, "", false, false, nil
+		// Rien de valide : on laisse la main au NLP classique (après seconde chance de l'IA)
+		return nil, "", false, false, nil, rejets
 	}
 
 	// Confirmation orale des actions sensibles
@@ -1034,67 +1230,80 @@ func (a *Analyseur) executerActionsGemini(session string, rep *gemini.Reponse, c
 			}
 		}
 		if len(descriptions) > 0 {
-			a.definirConfirmation(session, confirmationEnAttente{rep: rep})
+			a.definirConfirmation(session, confirmationEnAttente{rep: rep, texte: texte})
 			msg := messageTexte(i18n.T("confirmation.demande", strings.Join(descriptions, " ; ")))
-			return &msg, "", true, false, prepares[0].app
+			return &msg, "", true, false, prepares[0].app, nil
 		}
 	}
 
 	premier := prepares[0].app
-	premierVerbe, dernierTexte := "", ""
-	nbOK := 0
+	var succes []succesAction
+	var echecs, avertissements []string
+	question := ""
 	for _, p := range prepares {
 		retour, err := p.svc.ExecuterCommande(*p.app, p.verbe, p.params)
+		nom := nomAppareil(*p.app)
 		if err != nil {
 			logx.WarnT("gemini.action.erreur", p.app.EntityID, err)
+			// Champ obligatoire d'un script manquant : on pose la question à l'utilisateur
+			var manque *ha.ErreurParametreManquant
+			if errors.As(err, &manque) && question == "" {
+				question = i18n.T("gemini.parametre.manquant.question", strings.Join(manque.Champs, ", "))
+			}
+			echecs = append(echecs, nom)
 			continue
 		}
-		nbOK++
-		if premierVerbe == "" {
-			premierVerbe = p.verbe
+		// Convention des services : un retour « ⚠️ … » est un échec expliqué à l'utilisateur
+		if strings.HasPrefix(retour, "⚠️") {
+			avertissements = append(avertissements, retour)
+			echecs = append(echecs, nom)
+			continue
 		}
-		dernierTexte = retour
+		succes = append(succes, succesAction{verbe: p.verbe, nom: nom, params: p.params})
 	}
 
-	total := len(actions)
+	nonExecutees := len(actions) - len(prepares) // refusées par la validation
 	switch {
-	case nbOK == 0:
-		msg := messageTexte(i18n.T("erreur.action.parler"))
-		return &msg, premierVerbe, true, false, premier
-	case total == 1:
-		// Une seule action réussie : comportement historique (« j'ai <verbe> <appareil> »)
-		msg := types.Message{
-			SMS:  types.MessageDetails{Texte: dernierTexte},
-			Voix: types.MessageDetails{Texte: dernierTexte},
-		}
-		return &msg, premierVerbe, true, true, premier
-	case nbOK == total:
-		texte := strings.TrimSpace(rep.ReponseVocale)
-		if texte == "" {
-			texte = i18n.T("gemini.actions.ok", nbOK)
-		}
-		msg := messageTexte(texte)
-		return &msg, premierVerbe, true, false, premier
-	default:
-		msg := messageTexte(i18n.T("gemini.actions.partiel", nbOK, total))
-		return &msg, premierVerbe, true, false, premier
+	case len(succes) == 0 && question != "":
+		a.definirEcoute(session)
+		msg := messageTexte(question)
+		return &msg, "", true, false, premier, nil
+	case len(succes) == 0 && len(avertissements) > 0:
+		msg := messageTexte(avertissements[0])
+		return &msg, "", true, false, premier, nil
+	case len(succes) == 0:
+		msg := messageTexte(i18n.T("retour.echec", listeNoms(echecs)))
+		return &msg, "", true, false, premier, nil
 	}
+
+	texteFinal := phraseSucces(succes)
+	if len(echecs) > 0 {
+		texteFinal += " " + i18n.T("retour.echec.partiel", listeNoms(echecs))
+	}
+	if nonExecutees > 0 {
+		texteFinal += " " + i18n.T("retour.rejet.partiel", nonExecutees)
+	}
+	msg := messageTexte(texteFinal)
+	return &msg, succes[0].verbe, true, false, premier, nil
 }
 
 // executerLecturesGemini exécute les lectures demandées par l'IA en réutilisant
 // les services HA (météo, agenda, heure...) : le message est construit et prononcé
 // par le code, l'IA ne relit jamais le contenu (pas d'injection via un titre d'agenda).
-func (a *Analyseur) executerLecturesGemini(rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil) {
+func (a *Analyseur) executerLecturesGemini(texte string, rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
 	var msgs []types.Message
 	var premier *ha.Appareil
+	var rejets []string
 
 	for i, act := range rep.Actions {
 		if i >= maxActionsGemini {
 			break
 		}
+		act.Domain = domaineDeEntite(act.EntityID, act.Domain)
 		app := a.trouverAppareil(act.EntityID)
-		if app == nil || app.Domain != act.Domain || ha.DomaineExcluIA(app.Domain) {
+		if raison := raisonEntite(act, app); raison != "" {
 			logx.WarnT("gemini.lecture.rejetee", act.EntityID)
+			rejets = append(rejets, raison)
 			continue
 		}
 		svc, ok := ha.Lookup(app.Domain)
@@ -1102,11 +1311,25 @@ func (a *Analyseur) executerLecturesGemini(rep *gemini.Reponse) (*types.Message,
 			continue
 		}
 
+		// Briefing : le code lit les données, l'IA en fait un texte oral (avec le saint du jour)
+		if app.Domain == "briefing" {
+			if msg := a.briefingIA(texte, svc); msg != nil {
+				msgs = append(msgs, *msg)
+				if premier == nil {
+					premier = app
+				}
+				continue
+			}
+		}
+
 		// Les services attendent un texte normalisé (sans accents), comme celui de Vosk
 		texteNorm := text.Normaliser(act.Complement)
 		params := svc.ExtraireParams(texteNorm)
 		if params == nil {
 			params = map[string]interface{}{}
+		}
+		for k, v := range a.haClient.ParametresIAValides(*app, parametresBruts(act)) {
+			params[k] = v
 		}
 		if app.Domain == "agenda" {
 			appliquerPeriodeAgenda(params, act)
@@ -1119,10 +1342,10 @@ func (a *Analyseur) executerLecturesGemini(rep *gemini.Reponse) (*types.Message,
 	}
 
 	if len(msgs) == 0 {
-		return nil, "", false, false, nil
+		return nil, "", false, false, nil, rejets
 	}
 	msg := fusionnerMessages(msgs)
-	return &msg, "", true, false, premier
+	return &msg, "", true, false, premier, nil
 }
 
 // fusionnerMessages concatène plusieurs messages (patterns + paramètres) en un seul.
@@ -1185,19 +1408,24 @@ func parserDateIA(s string) (time.Time, bool) {
 
 // executerHistoriqueGemini répond à une question sur le passé d'une entité en
 // lisant l'historique HA sur la période demandée par l'IA. Le résumé est construit
-// par le code (cf. ha.ResumerHistorique), l'IA ne relit rien.
-func (a *Analyseur) executerHistoriqueGemini(rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil) {
+// par le code (cf. ha.DonneesHistorique). Si l'utilisateur veut un avis (« est-ce
+// normal ? »), un second appel léger demande à l'IA de commenter ces chiffres.
+func (a *Analyseur) executerHistoriqueGemini(texte string, rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
 	var textes []string
+	var donnees []*ha.DonneesHist
 	var premier *ha.Appareil
+	var rejets []string
 	maintenant := time.Now()
 
 	for i, act := range rep.Actions {
 		if i >= maxActionsGemini {
 			break
 		}
+		act.Domain = domaineDeEntite(act.EntityID, act.Domain)
 		app := a.trouverAppareil(act.EntityID)
-		if app == nil || app.Domain != act.Domain || ha.DomaineExcluIA(app.Domain) {
+		if raison := raisonEntite(act, app); raison != "" {
 			logx.WarnT("gemini.historique.rejete", act.EntityID)
+			rejets = append(rejets, raison)
 			continue
 		}
 
@@ -1217,20 +1445,108 @@ func (a *Analyseur) executerHistoriqueGemini(rep *gemini.Reponse) (*types.Messag
 			debut = fin.Add(-maxPlageHistorique)
 		}
 
-		texte, err := a.haClient.ResumerHistorique(*app, debut, fin)
+		d, err := a.haClient.DonneesHistorique(*app, debut, fin)
 		if err != nil {
 			logx.WarnT("gemini.historique.erreur", app.EntityID, err)
 			continue
 		}
-		textes = append(textes, texte)
+		textes = append(textes, d.Resume)
+		donnees = append(donnees, d)
 		if premier == nil {
 			premier = app
 		}
 	}
 
 	if len(textes) == 0 {
-		return nil, "", false, false, nil
+		return nil, "", false, false, nil, rejets
 	}
+
+	// Deuxième appel : l'IA commente les chiffres (repli sur le résumé du code en cas d'échec)
+	if rep.Analyser {
+		if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"mesures": donnees}); analyse != "" {
+			msg := messageTexte(analyse)
+			return &msg, "", true, false, premier, nil
+		}
+	}
+
 	msg := messageTexte(strings.Join(textes, " "))
-	return &msg, "", true, false, premier
+	return &msg, "", true, false, premier, nil
+}
+
+// analyserDonneesIA envoie à l'IA des données déjà calculées par le code pour qu'elle
+// les commente. Retourne "" si l'analyse est désactivée ou échoue (l'appelant se
+// rabat alors sur le résumé chiffré du code).
+func (a *Analyseur) analyserDonneesIA(question string, donnees interface{}) string {
+	if !a.ia.Analyse || a.gemini == nil {
+		return ""
+	}
+	brut, err := json.Marshal(donnees)
+	if err != nil {
+		return ""
+	}
+	analyse, err := a.gemini.Analyser(question, string(brut))
+	if err != nil {
+		a.journaliserErreurIA(err)
+		return ""
+	}
+	return analyse
+}
+
+// executerClassementGemini compare plusieurs capteurs (« quelle pièce est la plus
+// humide ? ») : le classement est calculé par le code, sur les valeurs actuelles ou sur
+// une période (7 jours maximum).
+func (a *Analyseur) executerClassementGemini(texte string, rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
+	cl := rep.Classement
+	if cl == nil || strings.TrimSpace(cl.TypeMesure) == "" {
+		return nil, "", false, false, nil, []string{i18n.T("gemini.rejet.classement")}
+	}
+
+	var debut, fin time.Time
+	maintenant := time.Now()
+	if d, ok := parserDateIA(cl.Debut); ok {
+		debut, fin = d, maintenant
+		if f, ok := parserDateIA(cl.Fin); ok && f.Before(maintenant) {
+			fin = f
+		}
+		if !fin.After(debut) {
+			debut, fin = time.Time{}, time.Time{}
+		} else if fin.Sub(debut) > maxPlageClassement {
+			debut = fin.Add(-maxPlageClassement)
+		}
+	}
+	top, _ := strconv.Atoi(strings.TrimSpace(cl.Top))
+
+	res, err := a.haClient.ClasserCapteurs(cl.TypeMesure, cl.Critere, cl.Piece, debut, fin, top)
+	if err != nil {
+		logx.WarnT("gemini.classement.erreur", err)
+		return nil, "", false, false, nil, nil
+	}
+	if rep.Analyser {
+		if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"classement": res}); analyse != "" {
+			res = analyse
+		}
+	}
+	msg := messageTexte(res)
+	return &msg, "", true, false, nil, nil
+}
+
+// briefingIA lit les données du briefing (code) puis demande à l'IA de les formuler
+// oralement, saint du jour compris. Retourne nil si l'IA est désactivée ou échoue :
+// l'appelant se rabat alors sur le briefing complet assemblé par le code.
+func (a *Analyseur) briefingIA(question string, svc ha.Service) *types.Message {
+	sb, ok := svc.(*ha.ServiceBriefing)
+	if !ok || !a.ia.Analyse || a.gemini == nil {
+		return nil
+	}
+	brut, err := json.Marshal(sb.Sections(time.Now()))
+	if err != nil {
+		return nil
+	}
+	texte, err := a.gemini.Resumer(question, string(brut))
+	if err != nil {
+		a.journaliserErreurIA(err)
+		return nil
+	}
+	msg := messageTexte(texte)
+	return &msg
 }

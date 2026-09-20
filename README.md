@@ -400,6 +400,12 @@ autorisée) avant toute exécution.
 | `GEMINI_MEMOIRE_TOURS` | `3`               | Échanges gardés par session ; `0` désactive la mémoire.                                           |
 | `GEMINI_MEMOIRE_SECONDES` | `180`          | Durée avant oubli d'une conversation inactive.                                                    |
 | `IA_CONFIRMATION` | `true`                 | Confirmation orale avant un SMS ou une automatisation ; `false` = exécution directe.              |
+| `GEMINI_SECONDE_CHANCE` | `true`             | Quand le code rejette la réponse de l'IA (entité inconnue, verbe invalide…), la rappeler une fois avec le motif précis. |
+| `GEMINI_ANALYSE`     | `true`                  | Analyse en deux appels : après une lecture d'historique ou un classement, l'IA commente les chiffres (« est-ce normal ? »). |
+| `BRIEFING_CALENDRIER_REPAS` | `mealie`         | Mot présent dans le nom des calendriers de repas (section « Au menu ») ; vide = pas de repas.    |
+| `GEMINI_MAX_REQUETES_MINUTE` / `_JOUR` | `0`       | Quotas locaux de requêtes (`0` = illimité).                                                       |
+| `GEMINI_MAX_TOKENS_MINUTE` | `0`               | Quota local de tokens sur 60 s glissantes (`0` = illimité).                                       |
+| `GEMINI_DELAI_MIN_MS` | `2000`                 | Délai minimal entre deux appels (anti-rafale).                                                    |
 | `IA_NUMEROS_AUTORISES` | *(vide → `WHITELIST`)* | Seuls numéros que l'IA peut viser dans une action de script.                                 |
 
 ### Contexte réduit, mémoire, pièces et garde-fous
@@ -419,6 +425,35 @@ autorisée) avant toute exécution.
 - **Garde-fous** : une action de script qui vise un numéro absent de `IA_NUMEROS_AUTORISES` (par défaut
   `WHITELIST`) est refusée ; un SMS et toute action sur une automatisation demandent une confirmation
   orale (« Je vais … Tu confirmes ? » → oui / non, 30 s). La réponse est interprétée par le code, pas par l'IA.
+
+### Robustesse et retour vocal
+
+- **Disjoncteur** : après un `429` (pour la durée conseillée par l'API, 10 min maximum) ou 3 échecs
+  consécutifs (timeouts, 5xx), l'IA est suspendue 60 s et le NLP classique prend le relais, sans spam de
+  logs. Les quotas locaux (`GEMINI_MAX_*`) protègent le compte ; `LOG_LEVEL=debug` affiche l'usage du jour.
+- **Seconde chance** : si l'IA propose une entité inexistante, un verbe invalide ou une action interdite, elle
+  est rappelée une fois avec le motif exact (et la liste des verbes possibles) avant le repli sur le NLP classique.
+- **Retour parlé** : après une action, l'assistant dit ce qui a été fait (« J'ai éteint Salon et Cuisine. »,
+  « Volet salon réglé à 50 pour cent. »), y compris les échecs partiels. C'est le code qui formule la phrase,
+  seulement après exécution.
+
+### Analyse, classement et briefing
+
+- **Analyse en deux appels** : « donne-moi les stats de la serre aujourd'hui, est-ce normal ? » → appel 1 :
+  l'IA choisit l'entité et la période ; le code lit l'historique et calcule min / max (avec leur heure) /
+  moyenne ; appel 2 (léger, sans le contexte maison) : l'IA commente ces chiffres. Elle ne connaît pas
+  tes seuils : quand elle s'appuie sur un ordre de grandeur général, elle le dit. En cas d'échec du second
+  appel, tu as quand même le résumé chiffré. `GEMINI_ANALYSE=false` le désactive.
+- **Classement** (`classement`) : « quelle pièce est la plus humide ? », « quand l'humidité était-elle au plus haut
+  dans la salle de bain ? ». Le code parcourt les capteurs d'une `device_class`, les rattache aux pièces HA,
+  et classe (valeurs actuelles, ou max / min / moyenne sur une période de 7 jours maximum).
+- **Briefing** : à la demande uniquement (« briefing », « fais-moi le point », « bonjour ») — il ne démarre
+  **jamais** à une heure fixe. Le code lit la météo du jour, l'agenda (hors calendriers de repas), les **repas du
+  jour** (calendriers Mealie) et les alertes (portes/fenêtres ouvertes, batteries < 15 %) ; l'IA en fait un texte
+  oral et y ajoute le **saint du jour** (elle le connaît : aucun calendrier n'est embarqué). Sans IA, le code lit
+  lui-même le briefing, sans saint du jour. « C'est quel saint aujourd'hui ? » est une simple question à l'IA.
+  Les titres d'agenda et de recettes sont transmis à l'IA pour ce second appel ; elle ne peut rien exécuter à ce
+  stade (sa sortie n'est que du texte lu à voix haute).
 
 ### Types de réponse
 

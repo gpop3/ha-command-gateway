@@ -48,6 +48,7 @@ var domainesToujoursDansContexte = map[string]bool{
 	"weather":      true,
 	"timer":        true,
 	"media_player": true,
+	"calendar":     true, // peu nombreux ; l'IA doit savoir quels calendriers existent (dont Mealie)
 }
 
 // DomaineToujoursDansContexte indique si un domaine échappe à la réduction du contexte.
@@ -72,6 +73,7 @@ var attributsWhitelist = map[string][]string{
 
 // ChampScript décrit un paramètre déclaré par un script HA (section `fields`).
 type ChampScript struct {
+	Nom         string      `json:"nom,omitempty"`
 	Description string      `json:"description,omitempty"`
 	Requis      bool        `json:"requis,omitempty"`
 	Exemple     interface{} `json:"exemple,omitempty"`
@@ -90,6 +92,7 @@ type EntiteContexte struct {
 	Domain       string                 `json:"domaine"`
 	State        string                 `json:"etat"`
 	Attributs    map[string]interface{} `json:"attributs,omitempty"`
+	Description  string                 `json:"description,omitempty"` // scripts : ce que fait le script
 	Parametres   map[string]ChampScript `json:"parametres,omitempty"` // scripts : paramètres acceptés
 	Piece        string                 `json:"piece,omitempty"`      // pièce HA de l'entité (registre des zones)
 }
@@ -98,8 +101,9 @@ type EntiteContexte struct {
 
 var cacheScripts struct {
 	sync.Mutex
-	champs map[string]map[string]ChampScript
-	maj    time.Time
+	champs       map[string]map[string]ChampScript
+	descriptions map[string]string
+	maj          time.Time
 }
 
 // champsScripts retourne, par script (object_id), les champs qu'il déclare.
@@ -121,7 +125,9 @@ func (c *Client) champsScripts() map[string]map[string]ChampScript {
 	var domaines []struct {
 		Domain   string `json:"domain"`
 		Services map[string]struct {
-			Fields map[string]struct {
+			Description string `json:"description"`
+			Fields      map[string]struct {
+				Name        string      `json:"name"`
 				Description string      `json:"description"`
 				Required    bool        `json:"required"`
 				Example     interface{} `json:"example"`
@@ -134,6 +140,7 @@ func (c *Client) champsScripts() map[string]map[string]ChampScript {
 	}
 
 	res := make(map[string]map[string]ChampScript)
+	descriptions := make(map[string]string)
 	for _, d := range domaines {
 		if d.Domain != "script" {
 			continue
@@ -144,20 +151,36 @@ func (c *Client) champsScripts() map[string]map[string]ChampScript {
 			}
 			champs := make(map[string]ChampScript, len(svc.Fields))
 			for nom, f := range svc.Fields {
-				champs[nom] = ChampScript{Description: f.Description, Requis: f.Required, Exemple: f.Example}
+				champs[nom] = ChampScript{Nom: f.Name, Description: f.Description, Requis: f.Required, Exemple: f.Example}
 			}
 			res[id] = champs
+			descriptions[id] = svc.Description
 		}
 	}
 
 	cacheScripts.champs = res
+	cacheScripts.descriptions = descriptions
 	cacheScripts.maj = time.Now()
 	return res
+}
+
+// descriptionScript retourne la description d'un script (ce qu'il fait), pour
+// aider l'IA à choisir entre plusieurs scripts proches.
+func (c *Client) descriptionScript(entityID string) string {
+	c.champsScripts() // s'assure que le cache est chargé
+	cacheScripts.Lock()
+	defer cacheScripts.Unlock()
+	return cacheScripts.descriptions[strings.TrimPrefix(entityID, "script.")]
 }
 
 // champsScript retourne les champs déclarés par un script (entity_id « script.xxx »).
 func (c *Client) champsScript(entityID string) map[string]ChampScript {
 	return c.champsScripts()[strings.TrimPrefix(entityID, "script.")]
+}
+
+// ChampsScript retourne les paramètres (`fields`) déclarés par un script (entity_id « script.xxx »).
+func (c *Client) ChampsScript(entityID string) map[string]ChampScript {
+	return c.champsScript(entityID)
 }
 
 // ParametresIAValides filtre les paramètres structurés proposés par l'IA : seuls
@@ -189,6 +212,11 @@ func (c *Client) ParametresIAValides(app Appareil, brut map[string]string) map[s
 			if v := strings.TrimSpace(brut[nom]); v != "" {
 				out[nom] = v
 			}
+		}
+	case "agenda":
+		// Restreint la lecture à un calendrier (mot présent dans son nom : « mealie »...)
+		if v := strings.TrimSpace(brut["calendrier"]); v != "" {
+			out["calendrier"] = v
 		}
 	case "timer":
 		if d, ok := analyserDuree(brut["duree"]); ok {
@@ -298,6 +326,7 @@ func (c *Client) ContexteJSON(pieces []Piece, retenus map[string]bool) (string, 
 				champs = c.champsScripts()
 			}
 			ent.Parametres = champs[strings.TrimPrefix(e.EntityID, "script.")]
+			ent.Description = c.descriptionScript(e.EntityID)
 		}
 
 		out = append(out, ent)

@@ -30,6 +30,8 @@ func main() {
 	haClient := ha.NewClient(cfg.HAUrl, cfg.HAToken, cfg.HAPieces, time.Duration(cfg.HATimeout), cfg)
 	haClient.AttendreWS()
 
+	ha.DefinirBriefingRepas(cfg.BriefingCalendrierRepas)
+
 	analyseur := nlp.New(haClient, cfg.ActivePreselection, nlp.ConfigDesambiguisation{
 		Active:   cfg.DesambiguisationActive,
 		Seuil:    cfg.DesambiguisationSeuil,
@@ -52,6 +54,12 @@ func main() {
 		} else {
 			geminiClient := gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
 			geminiClient.ActiverDebug(cfg.GeminiDebug)
+			geminiClient.DefinirQuotas(gemini.Quotas{
+				RequetesMinute: cfg.GeminiMaxRequetesMinute,
+				RequetesJour:   cfg.GeminiMaxRequetesJour,
+				TokensMinute:   cfg.GeminiMaxTokensMinute,
+				DelaiMin:       time.Duration(cfg.GeminiDelaiMinMs) * time.Millisecond,
+			})
 			analyseur.DefinirGemini(geminiClient, cfg.GeminiPrimary)
 
 			numeros := cfg.IANumerosAutorises
@@ -65,6 +73,8 @@ func main() {
 				MemoireDuree:     time.Duration(cfg.GeminiMemoireSecondes) * time.Second,
 				Confirmation:     cfg.IAConfirmation,
 				NumerosAutorises: strings.Split(numeros, ","),
+				SecondeChance:    cfg.GeminiSecondeChance,
+				Analyse:          cfg.GeminiAnalyse,
 			})
 			// Pré-charge le registre des pièces HA (évite la latence au premier appel)
 			go haClient.ZonesEntites()

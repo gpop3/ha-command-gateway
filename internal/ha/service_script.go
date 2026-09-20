@@ -1,11 +1,22 @@
 package ha
 
 import (
-	"fmt"
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
+	"ha-command-gateway/internal/utils/text"
+	"sort"
 	"strings"
 )
+
+// ErreurParametreManquant : un script appelé par l'IA a des champs obligatoires
+// (`fields` avec required: true) qui n'ont pas été fournis.
+type ErreurParametreManquant struct {
+	Champs []string
+}
+
+func (e *ErreurParametreManquant) Error() string {
+	return i18n.T("script.parametre.manquant", strings.Join(e.Champs, ", "))
+}
 
 // ServiceScript gère le domaine "script"
 // Scripts disponibles sur cette instance :
@@ -46,12 +57,12 @@ func (s *ServiceScript) ExecuterCommande(app Appareil, verbe string, params map[
 
 	// Paramètres structurés proposés par l'IA (déjà filtrés sur les `fields`
 	// déclarés par le script, cf. Client.ParametresIAValides)
-	vars, depuisIA := params["variables"].(map[string]interface{})
-	if depuisIA {
-		for k, v := range vars {
-			variables[k] = v
-		}
+	vars, _ := params["variables"].(map[string]interface{})
+	for k, v := range vars {
+		variables[k] = v
 	}
+	// params["ia"] : appel proposé par l'IA (contrôle des champs obligatoires)
+	depuisIA, _ := params["ia"].(bool)
 
 	// Chemin classique (texte libre « dire ... ») : message / message_vocal
 	if msg, ok := params["message"].(string); ok && msg != "" {
@@ -65,10 +76,15 @@ func (s *ServiceScript) ExecuterCommande(app Appareil, verbe string, params map[
 
 	// Pour l'IA : refuser d'exécuter un script dont un champ obligatoire manque
 	if depuisIA {
+		var manquants []string
 		for nom, champ := range s.client.champsScript(app.EntityID) {
 			if _, present := variables[nom]; champ.Requis && !present {
-				return "", fmt.Errorf("%s", i18n.T("script.parametre.manquant", nom))
+				manquants = append(manquants, nom)
 			}
+		}
+		if len(manquants) > 0 {
+			sort.Strings(manquants)
+			return "", &ErreurParametreManquant{Champs: manquants}
 		}
 	}
 
@@ -85,7 +101,7 @@ func (s *ServiceScript) ExtraireParams(texte string) map[string]interface{} {
 
 	mots := strings.Fields(texte)
 	for i, mot := range mots {
-		if mot == "dire" || mot == "message" || mot == "annonce" {
+		if estMotCleMessage(mot) {
 			if i+1 < len(mots) {
 				params["message"] = strings.Join(mots[i+1:], " ")
 				break
@@ -101,4 +117,18 @@ func (s *ServiceScript) MotsReconnus() []string {
 	return []string{
 		"dire", "message", "annonce",
 	}
+}
+
+// estMotCleMessage : « dire », « message », « annonce » — avec une faute de
+// transcription tolérée (« annoce », « anonce »...).
+func estMotCleMessage(mot string) bool {
+	if mot == "dire" {
+		return true
+	}
+	for _, kw := range []string{"message", "annonce"} {
+		if text.DistanceLevenshtein(mot, kw) <= 1 {
+			return true
+		}
+	}
+	return false
 }

@@ -31,6 +31,14 @@ type ConfigIA struct {
 	Confirmation bool
 	// NumerosAutorises : seuls numéros que l'IA peut viser dans une action.
 	NumerosAutorises []string
+
+	// SecondeChance : quand le code rejette la réponse de l'IA (entité inconnue,
+	// verbe invalide...), la rappeler une fois en lui expliquant l'erreur.
+	SecondeChance bool
+
+	// Analyse : après une lecture d'historique ou un classement, rappeler l'IA pour
+	// qu'elle commente les chiffres (« est-ce normal ? »). Un appel en plus.
+	Analyse bool
 }
 
 func configIAParDefaut() ConfigIA {
@@ -40,6 +48,8 @@ func configIAParDefaut() ConfigIA {
 		MemoireTours: 3,
 		MemoireDuree: 3 * time.Minute,
 		Confirmation: true,
+		SecondeChance: true,
+		Analyse:       true,
 	}
 }
 
@@ -119,6 +129,7 @@ func (a *Analyseur) memoriser(session, demande string, rep *gemini.Reponse) {
 // confirmationEnAttente : action sensible proposée par l'IA, en attente d'un « oui ».
 type confirmationEnAttente struct {
 	rep    *gemini.Reponse
+	texte  string // demande d'origine de l'utilisateur
 	expire time.Time
 }
 
@@ -279,6 +290,30 @@ func (a *Analyseur) destinatairesAutorises(domaine string, params map[string]int
 	return true
 }
 
+// estScriptSMS : script dont le nom (ou l'id) évoque un SMS (« envoi_de_sms_gregory »).
+// Un tel script est sensible même si le numéro est écrit en dur dans le script.
+func estScriptSMS(app ha.Appareil) bool {
+	return strings.Contains(text.Normaliser(app.EntityID+" "+app.FriendlyNameExact), "sms")
+}
+
+// contenuFourni : l'appel contient-il un texte à transmettre (autre qu'un simple numéro) ?
+func contenuFourni(params map[string]interface{}) bool {
+	if m, ok := params["message"].(string); ok && strings.TrimSpace(m) != "" {
+		return true
+	}
+	vars, _ := params["variables"].(map[string]interface{})
+	for _, v := range vars {
+		s, ok := v.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			continue
+		}
+		if _, isNum := normaliserNumero(s); !isNum {
+			return true
+		}
+	}
+	return false
+}
+
 // decrireActionSensible indique si une action doit être confirmée (automatisation,
 // ou script visant un numéro = SMS) et la décrit pour la question posée à l'utilisateur.
 func decrireActionSensible(app ha.Appareil, action string, params map[string]interface{}) (string, bool) {
@@ -295,10 +330,21 @@ func decrireActionSensible(app ha.Appareil, action string, params map[string]int
 		return i18n.T(cle, nom), true
 	case "script":
 		vars, _ := params["variables"].(map[string]interface{})
-		if len(numerosDans(vars)) == 0 {
+		if len(numerosDans(vars)) == 0 && !estScriptSMS(app) {
 			return "", false
 		}
-		return i18n.T("confirmation.script.sms", nom, valeursTexte(vars)), true
+		// Ce qui sera transmis au script : variables + message (chemin texte libre)
+		contenu := make(map[string]interface{}, len(vars)+1)
+		for k, v := range vars {
+			contenu[k] = v
+		}
+		if m, ok := params["message"].(string); ok && m != "" {
+			contenu["message"] = m
+		}
+		if len(contenu) == 0 {
+			return i18n.T("confirmation.script.sms.simple", nom), true
+		}
+		return i18n.T("confirmation.script.sms", nom, valeursTexte(contenu)), true
 	}
 	return "", false
 }

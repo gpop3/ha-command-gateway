@@ -180,17 +180,19 @@ func (s *ServiceMediaPlayer) Init(a Analyseur) {
 
 func (s *ServiceMediaPlayer) ExecuterCommande(app Appareil, verbe string, params map[string]interface{}) (string, error) {
 	// Verbes de contrôle prioritaires — ignorer les params source
-	action, ok := s.Verbe(verbe)
-	if ok && action == "alexa_minuteur" {
+	action, verbeConnu := s.Verbe(verbe)
+	if verbeConnu && action == "alexa_minuteur" {
 		return s.minuteurAlexa(app, params)
 	}
-	if ok && action != "media_play" {
+	if verbeConnu && action != "media_play" {
 		return s.appeler(app.EntityID, action, nil)
 	}
 
-	// "joue/lance spotify sur barre de son" → select_source sur le player Spotify
-	if src, ok := params["source"].(string); ok && (src == "spotify" || src == "musique") {
-		return s.jouerSpotify(params)
+	// "joue/lance spotify sur barre de son" → select_source sur le player Spotify.
+	// Aussi quand la commande vise directement l'entité Spotify sans préciser « source ».
+	src, _ := params["source"].(string)
+	if src == "spotify" || src == "musique" || (verbeConnu && estEntiteSpotify(app.EntityID)) {
+		return s.jouerSpotify(app, params)
 	}
 
 	if pct, ok := params["pourcentage"].(int); ok {
@@ -214,18 +216,32 @@ func (s *ServiceMediaPlayer) MotsReconnus() []string {
 	return s.Verbes()
 }
 
-// jouerSpotify lance Spotify, éventuellement sur l'appareil demandé (params["cible"]).
+func estEntiteSpotify(entityID string) bool {
+	return strings.Contains(strings.ToLower(entityID), "spotify")
+}
+
+// jouerSpotify lance Spotify, éventuellement sur l'appareil demandé.
+// L'appareil vient de params["cible"] ; à défaut, on le cherche dans la phrase de
+// l'utilisateur (params["texte"]) parmi la source_list Spotify.
 // Ordre important : on choisit d'abord l'appareil (select_source), puis on relance la lecture.
-func (s *ServiceMediaPlayer) jouerSpotify(params map[string]interface{}) (string, error) {
-	if s.analyseur == nil {
-		return i18n.T("media.spotify.domaine.incoherent"), nil
+func (s *ServiceMediaPlayer) jouerSpotify(app Appareil, params map[string]interface{}) (string, error) {
+	spotify := app
+	if !estEntiteSpotify(app.EntityID) {
+		if s.analyseur == nil {
+			return i18n.T("media.spotify.domaine.incoherent"), nil
+		}
+		spotify, _ = s.analyseur.TrouverMeilleurMatch("spotify", true, []string{"media_player"})
 	}
-	spotify, _ := s.analyseur.TrouverMeilleurMatch("spotify", true, []string{"media_player"})
 	if spotify.Domain != "media_player" {
 		return i18n.T("media.spotify.domaine.incoherent"), nil
 	}
 
 	cible, _ := params["cible"].(string)
+	cible = strings.TrimSpace(cible)
+	explicite := cible != ""
+	if !explicite {
+		cible, _ = params["texte"].(string)
+	}
 	if strings.TrimSpace(cible) == "" {
 		return s.appeler(spotify.EntityID, "media_play", nil)
 	}
@@ -233,7 +249,10 @@ func (s *ServiceMediaPlayer) jouerSpotify(params map[string]interface{}) (string
 	s.chargerSources(spotify.EntityID)
 	sourceHA := s.trouverSourceSpotify(cible)
 	if sourceHA == "" {
-		return i18n.T("media.spotify.source.introuvable"), nil
+		if explicite {
+			return i18n.T("media.spotify.source.introuvable"), nil
+		}
+		return s.appeler(spotify.EntityID, "media_play", nil)
 	}
 
 	retour, err := s.appeler(spotify.EntityID, "select_source", map[string]interface{}{"source": sourceHA})

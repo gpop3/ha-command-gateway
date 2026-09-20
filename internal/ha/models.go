@@ -41,6 +41,7 @@ type AttributsEntite struct {
 	Visibility         float64  `json:"visibility"`
 	SourceList         []string `json:"source_list"`
 	Unit               string   `json:"unit_of_measurement"`
+	DeviceClass        string   `json:"device_class"`
 	FinishesAt         string   `json:"finishes_at"`
 	Remaining          string   `json:"remaining"`
 }
@@ -85,6 +86,7 @@ type PrevisionHoraire struct {
 	DateTime      string  `json:"datetime"`
 	Temperature   float64 `json:"temperature"`
 	Condition     string  `json:"condition"`
+	TempLow       *float64 `json:"templow"`
 	Precipitation float64 `json:"precipitation"`
 	WindSpeed     float64 `json:"wind_speed"`
 }

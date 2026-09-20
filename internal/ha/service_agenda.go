@@ -10,6 +10,7 @@ import (
 
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
+	"ha-command-gateway/internal/utils/text"
 )
 
 type ServiceAgenda struct {
@@ -55,7 +56,55 @@ func (s *ServiceAgenda) MotsReconnus() []string {
 	}
 }
 
-func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrier {
+// getEvenements lit les événements de tous les calendriers HA ; `filtre` (facultatif)
+// restreint aux calendriers dont l'id ou le nom contient ce mot (« mealie »).
+func (s *ServiceAgenda) getEvenements(debut, fin time.Time, filtre string) []EvenementCalendrier {
+	var garde func(Appareil) bool
+	if filtre != "" {
+		mot := text.Normaliser(filtre)
+		garde = func(app Appareil) bool {
+			return strings.Contains(text.Normaliser(app.EntityID+" "+app.FriendlyNameExact), mot)
+		}
+	}
+	return s.evenementsFiltres(debut, fin, garde)
+}
+
+// evenementsCalendrier lit les événements d'UN calendrier sur [debut, fin].
+func (s *ServiceAgenda) evenementsCalendrier(app Appareil, debut, fin time.Time) []EvenementCalendrier {
+	path := fmt.Sprintf("/api/calendars/%s?start=%s&end=%s",
+		app.EntityID,
+		debut.UTC().Format("2006-01-02T15:04:05.000Z"),
+		fin.UTC().Format("2006-01-02T15:04:05.000Z"),
+	)
+	body, err := s.client.get(path)
+	if err != nil {
+		logx.ErrorT("agenda.agenda", app.EntityID, err)
+		return nil
+	}
+	var events []EvenementCalendrier
+	if err := json.Unmarshal(body, &events); err != nil {
+		logx.ErrorT("agenda.agenda.unmarshal", app.EntityID, err)
+		return nil
+	}
+	return events
+}
+
+// debutEvenement : instant de début d'un événement (date seule = minuit local).
+func debutEvenement(e EvenementCalendrier) time.Time {
+	if e.Start.DateTime != "" {
+		t, _ := time.Parse(time.RFC3339, e.Start.DateTime)
+		return t
+	}
+	if e.Start.Date != "" {
+		t, _ := time.ParseInLocation("2006-01-02", e.Start.Date, time.Local)
+		return t
+	}
+	return time.Time{}
+}
+
+// evenementsFiltres lit les événements des calendriers acceptés par `garde`
+// (nil = tous), triés par début.
+func (s *ServiceAgenda) evenementsFiltres(debut, fin time.Time, garde func(Appareil) bool) []EvenementCalendrier {
 	var tousEvenements []EvenementCalendrier
 	if s.analyseur == nil {
 		return tousEvenements
@@ -65,42 +114,14 @@ func (s *ServiceAgenda) getEvenements(debut, fin time.Time) []EvenementCalendrie
 		if app.Domain != "calendar" {
 			continue
 		}
-		path := fmt.Sprintf("/api/calendars/%s?start=%s&end=%s",
-			app.EntityID,
-			debut.UTC().Format("2006-01-02T15:04:05.000Z"),
-			fin.UTC().Format("2006-01-02T15:04:05.000Z"),
-		)
-		body, err := s.client.get(path)
-		if err != nil {
-			logx.ErrorT("agenda.agenda", app.EntityID, err)
+		if garde != nil && !garde(app) {
 			continue
 		}
-		var events []EvenementCalendrier
-		if err := json.Unmarshal(body, &events); err != nil {
-			logx.ErrorT("agenda.agenda.unmarshal", app.EntityID, err)
-			continue
-		}
-		tousEvenements = append(tousEvenements, events...)
+		tousEvenements = append(tousEvenements, s.evenementsCalendrier(app, debut, fin)...)
 	}
 
 	slices.SortFunc(tousEvenements, func(a, b EvenementCalendrier) int {
-		var timeA, timeB time.Time
-
-		if a.Start.DateTime != "" {
-			timeA, _ = time.Parse(time.RFC3339, a.Start.DateTime)
-		} else if a.Start.Date != "" {
-			timeA, _ = time.Parse("2006-01-02", a.Start.Date)
-		}
-
-		if b.Start.DateTime != "" {
-			timeB, _ = time.Parse(time.RFC3339, b.Start.DateTime)
-		} else if b.Start.Date != "" {
-			timeB, _ = time.Parse("2006-01-02", b.Start.Date)
-		}
-
-		logx.InfoT("agenda.valeurs.recues", timeA, timeB)
-
-		return timeA.Compare(timeB)
+		return debutEvenement(a).Compare(debutEvenement(b))
 	})
 
 	return tousEvenements
@@ -178,6 +199,8 @@ type Agenda struct {
 
 func (s *ServiceAgenda) RecupererEtat(app Appareil, dateCible time.Time, params map[string]interface{}) (*EtatComplet, any, error) {
 	horizon, _ := params["horizon"].(string)
+	filtre, _ := params["calendrier"].(string)
+	filtre = strings.TrimSpace(filtre)
 	now := time.Now()
 
 	var reponse Agenda
@@ -187,7 +210,7 @@ func (s *ServiceAgenda) RecupererEtat(app Appareil, dateCible time.Time, params 
 	if d, ok := params["debut"].(time.Time); ok {
 		if f, ok := params["fin"].(time.Time); ok && f.After(d) {
 			reponse.Horizon = "periode"
-			reponse.Evenements = s.getEvenements(d, f)
+			reponse.Evenements = s.getEvenements(d, f, filtre)
 			return nil, reponse, nil
 		}
 	}
@@ -208,7 +231,7 @@ func (s *ServiceAgenda) RecupererEtat(app Appareil, dateCible time.Time, params 
 		fin = debut.Add(24 * time.Hour)
 	}
 
-	reponse.Evenements = s.getEvenements(debut, fin)
+	reponse.Evenements = s.getEvenements(debut, fin, filtre)
 
 	return nil, reponse, nil
 
