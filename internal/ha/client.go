@@ -129,11 +129,14 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func(body io.ReadCloser) {
-		if err := body.Close(); err != nil {
-			logx.Error(err)
-		}
-	}(resp.Body)
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	_, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s", i18n.T("erreur.ha.reponse.post", resp.StatusCode, path))
