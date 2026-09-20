@@ -93,6 +93,12 @@ type Config struct {
 	ActiveVoice      bool
 	ActiveServerHttp bool
 	ActiveConsole    bool
+
+	// Gemini IA
+	GeminiActive  bool
+	GeminiPrimary bool
+	GeminiModel   string
+	GeminiAPIKey  string
 }
 
 // Load charge la config depuis les variables d'environnement, avec des valeurs par défaut
@@ -188,6 +194,12 @@ func Load() *Config {
 		ActiveVoice:      getEnv("ACTIVE_VOICE", "true") == "true",
 		ActiveServerHttp: getEnv("ACTIVE_SERVER_HTTP", "true") == "true",
 		ActiveConsole:    getEnv("ACTIVE_CONSOLE", "true") == "true",
+
+		// Gemini
+		GeminiActive:  getEnv("GEMINI_ACTIVE", "false") == "true",
+		GeminiPrimary: getEnv("GEMINI_PRIMARY", "false") == "true",
+		GeminiModel:   getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
+		GeminiAPIKey:  getEnv("GEMINI_API_KEY", ""),
 	}
 
 	// Construction automatique du whisperURL si non fourni

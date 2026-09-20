@@ -2,6 +2,7 @@ package nlp
 
 import (
 	"encoding/json"
+	"ha-command-gateway/internal/core/adapters/gemini"
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/utils/text"
 	"ha-command-gateway/pkg/types"
@@ -29,6 +30,9 @@ type Analyseur struct {
 	score      ConfigScore
 	muAttentes sync.Mutex
 	attentes   map[string]enAttente
+
+	gemini        *gemini.Client
+	geminiPrimary bool
 }
 
 // ConfigDesambiguisation paramètre la proposition de choix multiples lorsque plusieurs entités obtiennent un score très proche.
@@ -65,6 +69,12 @@ type enAttente struct {
 }
 
 const dureeAttenteChoix = 30 * time.Second
+
+// DefinirGemini branche le fallback/primaire IA
+func (a *Analyseur) DefinirGemini(client *gemini.Client, primary bool) {
+	a.gemini = client
+	a.geminiPrimary = primary
+}
 
 // New crée un analyseur avec le client HA fourni
 func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisation, score ConfigScore) *Analyseur {
@@ -344,6 +354,12 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 		a.effacerAttente(session)
 	}
 
+	if a.gemini != nil && a.geminiPrimary {
+		if msg, verbe, match, isAction, app := a.tenterGemini(texte); match {
+			return msg, verbe, match, isAction, app
+		}
+	}
+
 	verbe, estAction := detecterVerbe(nettoye)
 
 	domainesCandidats := []string{}
@@ -357,6 +373,11 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 
 	classement := a.classerAppareils(nettoye, domainesCandidats)
 	if len(classement) == 0 || classement[0].Score < a.score.Minimal {
+		if a.gemini != nil && !a.geminiPrimary {
+			if msg, verbe2, match, isAction, app := a.tenterGemini(texte); match {
+				return msg, verbe2, match, isAction, app
+			}
+		}
 		return nil, verbe, false, false, nil
 	}
 
@@ -804,4 +825,59 @@ func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoy
 	}
 
 	return svc.EtatEnMessage(app, etat, etatCustom, dateParam)
+}
+
+// tenterGemini interroge l'IA et valide strictement sa réponse avant toute
+// exécution : entity_id doit exister dans le catalogue, verbe doit être
+// reconnu par le domaine de cette entité précise.
+func (a *Analyseur) tenterGemini(texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
+	contexte, err := a.haClient.ContexteJSON(a.GetPieces())
+	if err != nil {
+		logx.WarnT("gemini.contexte.erreur", err)
+		return nil, "", false, false, nil
+	}
+	capacites, err := json.Marshal(ha.CapacitesIA())
+	if err != nil {
+		return nil, "", false, false, nil
+	}
+
+	rep, err := a.gemini.Interroger(texte, contexte, string(capacites))
+	if err != nil {
+		logx.WarnT("gemini.appel.erreur", err)
+		return nil, "", false, false, nil
+	}
+
+	if rep.Type == "speak" {
+		msg := types.Message{
+			Voix: types.MessageDetails{Texte: rep.ReponseVocale},
+			SMS:  types.MessageDetails{Texte: rep.ReponseVocale},
+		}
+		return &msg, "", true, false, nil
+	}
+
+	// --- validation stricte : Gemini propose, le code décide ---
+	var app *ha.Appareil
+	for _, cand := range a.catalogue {
+		if cand.EntityID == rep.EntityID {
+			c := cand
+			app = &c
+			break
+		}
+	}
+	if app == nil || app.Domain != rep.Domain {
+		logx.WarnT("gemini.entite.rejetee", rep.EntityID)
+		return nil, "", false, false, nil
+	}
+	svc, ok := ha.Lookup(rep.Domain)
+	if !ok {
+		return nil, "", false, false, nil
+	}
+	if _, vok := svc.Verbe(rep.Verbe); !vok {
+		logx.WarnT("gemini.verbe.rejete", rep.Verbe, rep.Domain)
+		return nil, "", false, false, nil
+	}
+
+	params := svc.ExtraireParams(rep.Complement)
+	etatMsg := a.executerActionMessage(svc, *app, rep.Verbe, params)
+	return &etatMsg, rep.Verbe, true, true, app
 }

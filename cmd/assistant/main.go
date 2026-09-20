@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"ha-command-gateway/internal/core/adapters/gemini"
 	"os"
 	"os/signal"
 	"syscall"
@@ -43,6 +44,17 @@ func main() {
 		MalusMotSuperflu:      cfg.ScoreMalusMotSuperflu,
 		MalusActionSansCible:  cfg.ScoreMalusActionSansCible,
 	})
+
+	if cfg.GeminiActive {
+		if cfg.GeminiAPIKey == "" {
+			logx.WarnT("gemini.cle.manquante")
+		} else {
+			geminiClient := gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
+			analyseur.DefinirGemini(geminiClient, cfg.GeminiPrimary)
+			logx.InfoT("gemini.active", cfg.GeminiModel, cfg.GeminiPrimary)
+		}
+	}
+
 	if err := analyseur.RafraichirCatalogue(); err != nil {
 		logx.Fatalf("%s", i18n.T("erreur.ha.connexion", err))
 	}

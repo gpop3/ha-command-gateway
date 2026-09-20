@@ -439,5 +439,13 @@ func init() {
 
 		// Mots en vrac
 		"mot.heure": "heure",
+
+		// ---- Gemini / IA ----
+		"gemini.cle.manquante":   "⚠️ GEMINI_ACTIVE=true mais GEMINI_API_KEY est vide : IA désactivée.",
+		"gemini.active":          "🤖 IA activée (%s), mode primaire : %v",
+		"gemini.contexte.erreur": "⚠️ Erreur construction du contexte pour Gemini : %v",
+		"gemini.appel.erreur":    "⚠️ Erreur appel Gemini : %v",
+		"gemini.entite.rejetee":  "🚫 Gemini a proposé une entité invalide, rejetée : %s",
+		"gemini.verbe.rejete":    "🚫 Gemini a proposé un verbe non reconnu pour ce domaine : %s (%s)",
 	})
 }
