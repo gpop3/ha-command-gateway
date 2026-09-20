@@ -129,9 +129,8 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
+	defer func(body io.ReadCloser) {
+		if err := body.Close(); err != nil {
 			logx.Error(err)
 		}
 	}(resp.Body)
