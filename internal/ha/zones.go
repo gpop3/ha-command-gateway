@@ -31,10 +31,15 @@ const (
 
 // commandeWS envoie une commande WebSocket HA et décode son résultat dans dest.
 func (c *Client) commandeWS(typ string, dest interface{}) error {
+	return c.commandeWSAvec(wsMessage{Type: typ}, dest)
+}
+
+// commandeWSAvec : comme commandeWS, avec des paramètres (domain, item_id, run_id).
+func (c *Client) commandeWSAvec(msg wsMessage, dest interface{}) error {
 	if c.ws == nil {
 		return fmt.Errorf("websocket HA indisponible")
 	}
-	resp, err := c.ws.send(wsMessage{Type: typ})
+	resp, err := c.ws.send(msg)
 	if err != nil {
 		return err
 	}

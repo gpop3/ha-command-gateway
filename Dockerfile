@@ -69,4 +69,8 @@ ENV PIPER_SERVER_MODEL_NAME=fr_FR-siwis-medium
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Sonde de vie : la boucle de traitement répond-elle ? (nécessite ACTIVE_SERVER_HTTP=true)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${API_PORT:-8080}/health" || exit 1
+
 ENTRYPOINT ["entrypoint.sh"]

@@ -23,6 +23,9 @@ import (
 	"ha-command-gateway/internal/plugins"
 )
 
+// version est renseignée à la compilation : go build -ldflags "-X main.version=1.2.3".
+var version = "dev"
+
 func main() {
 	cfg := config.Load()
 	i18n.SetLocale(cfg.Lang)
@@ -31,6 +34,7 @@ func main() {
 	haClient.AttendreWS()
 
 	ha.DefinirBriefingRepas(cfg.BriefingCalendrierRepas)
+	ha.DefinirTarifKWh(cfg.TarifKWh)
 
 	analyseur := nlp.New(haClient, cfg.ActivePreselection, nlp.ConfigDesambiguisation{
 		Active:   cfg.DesambiguisationActive,
@@ -48,11 +52,12 @@ func main() {
 		MalusActionSansCible:  cfg.ScoreMalusActionSansCible,
 	})
 
+	var geminiClient *gemini.Client // nil si l'IA est désactivée
 	if cfg.GeminiActive {
 		if cfg.GeminiAPIKey == "" {
 			logx.WarnT("gemini.cle.manquante")
 		} else {
-			geminiClient := gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
+			geminiClient = gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
 			geminiClient.ActiverDebug(cfg.GeminiDebug)
 			geminiClient.DefinirQuotas(gemini.Quotas{
 				RequetesMinute: cfg.GeminiMaxRequetesMinute,
@@ -75,6 +80,7 @@ func main() {
 				NumerosAutorises: strings.Split(numeros, ","),
 				SecondeChance:    cfg.GeminiSecondeChance,
 				Analyse:          cfg.GeminiAnalyse,
+				SeuilGroupe:      cfg.IAConfirmationGroupe,
 			})
 			// Pré-charge le registre des pièces HA (évite la latence au premier appel)
 			go haClient.ZonesEntites()
@@ -138,7 +144,24 @@ func main() {
 
 	// API HTTP
 	if cfg.ActiveServerHttp {
-		mgr.Register(api.New(cfg.APIPort, cfg.APIKey, apiSender, analyseur))
+		statut := func() map[string]interface{} {
+			res := map[string]interface{}{
+				"version":      version,
+				"ha_websocket": haClient.EtatWebsocket(),
+				"entites":      analyseur.NbEntites(),
+				"sessions_ia":  analyseur.NbSessions(),
+				"services": map[string]bool{
+					"voix": cfg.ActiveVoice, "sms": cfg.ActiveSms, "console": cfg.ActiveConsole, "api": cfg.ActiveServerHttp,
+				},
+			}
+			if geminiClient != nil {
+				res["ia"] = geminiClient.Statut()
+			} else {
+				res["ia"] = "désactivée"
+			}
+			return res
+		}
+		mgr.Register(api.New(cfg.APIPort, cfg.APIKey, apiSender, analyseur, bus, statut))
 	}
 
 	// Plugins .so (services tiers)

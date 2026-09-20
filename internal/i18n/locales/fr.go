@@ -591,6 +591,16 @@ func init() {
 		"gemini.rejet.recherche":             "la recherche demandée est incomplète : renseigne entity_id et mode",
 		"gemini.recherche.erreur":            "⚠️ Recherche dans la courbe impossible pour %s : %v",
 		"gemini.journal.erreur":              "⚠️ Lecture du journal HA impossible pour %s : %v",
+		"annulation.rien":                    "Je n'ai rien à annuler.",
+		"annulation.ok":                      "C'est annulé : %s remis comme avant.",
+		"annulation.echec":                   "Je n'ai pas pu remettre %s comme avant.",
+		"annulation.impossible":              "Je ne peux pas annuler : %s.",
+		"annulation.echec.log":               "⚠️ Annulation impossible pour %s : %v",
+		"confirmation.groupe":                "exécuter « %s » sur %d appareils (%s)",
+		"gemini.rejet.enquete":               "l'enquête demandée est incomplète ou inconnue : renseigne \"sujet\" (pourquoi_automatisation, diagnostic_piece, diagnostic_maison, resume, energie, conseil, annuler)",
+		"gemini.rejet.enquete.automation":    "pour « pourquoi_automatisation », mets une entité automation.* existante dans \"actions\"",
+		"gemini.rejet.enquete.piece":         "pour « diagnostic_piece », renseigne \"piece\"",
+		"gemini.enquete.erreur":              "⚠️ Enquête « %s » impossible : %v",
 		"gemini.debug.reponse":     "🤖 Gemini ← %s\n(tokens : prompt=%d, sortie=%d, total=%d)",
 
 		// ---- Agenda (période explicite) ----

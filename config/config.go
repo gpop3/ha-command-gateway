@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"ha-command-gateway/internal/logx"
 
@@ -120,6 +121,8 @@ type Config struct {
 	GeminiDelaiMinMs        int  // délai minimal entre deux appels
 	GeminiSecondeChance     bool // rappeler l'IA une fois quand le code rejette sa réponse
 	GeminiAnalyse           bool // analyse en deux appels (l'IA commente les données lues par le code)
+	IAConfirmationGroupe    int  // confirmation au-delà de ce nombre d'actions d'un coup (0 = jamais)
+	TarifKWh                float64 // prix du kWh (€) pour estimer un coût ; 0 = pas de coût
 
 	// Briefing à la demande
 	BriefingCalendrierRepas string // mot-clé des calendriers de repas (défaut : mealie ; vide = pas de section repas)
@@ -239,6 +242,8 @@ func Load() *Config {
 		GeminiDelaiMinMs:        getEnvInt("GEMINI_DELAI_MIN_MS", 2000),
 		GeminiSecondeChance:     getEnv("GEMINI_SECONDE_CHANCE", "true") == "true",
 		GeminiAnalyse:           getEnv("GEMINI_ANALYSE", "true") == "true",
+		IAConfirmationGroupe:    getEnvInt("IA_CONFIRMATION_GROUPE", 5),
+		TarifKWh:                getEnvFloat("TARIF_KWH", 0),
 		BriefingCalendrierRepas: getEnv("BRIEFING_CALENDRIER_REPAS", "mealie"),
 	}
 
@@ -263,6 +268,16 @@ func getEnvInt(key string, fallback int) int {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	if val := os.Getenv(key); val != "" {
+		var f float64
+		if _, err := fmt.Sscanf(strings.ReplaceAll(val, ",", "."), "%f", &f); err == nil {
+			return f
+		}
 	}
 	return fallback
 }

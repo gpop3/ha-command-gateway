@@ -43,6 +43,7 @@ type Analyseur struct {
 	memoires         map[string]*memoireSession
 	confirmations    map[string]confirmationEnAttente
 	ecoutes          map[string]time.Time
+	annulations      map[string][]groupeAnnulation
 }
 
 // ConfigDesambiguisation paramètre la proposition de choix multiples lorsque plusieurs entités obtiennent un score très proche.
@@ -99,6 +100,7 @@ func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisa
 		memoires:           make(map[string]*memoireSession),
 		confirmations:      make(map[string]confirmationEnAttente),
 		ecoutes:            make(map[string]time.Time),
+		annulations:        make(map[string][]groupeAnnulation),
 	}
 }
 
@@ -1015,6 +1017,8 @@ func (a *Analyseur) traiterReponseGemini(session, texte string, rep *gemini.Repo
 		return a.executerJournalGemini(texte, rep)
 	case "recherche":
 		return a.executerRechercheGemini(texte, rep)
+	case "enquete":
+		return a.executerEnqueteGemini(session, texte, rep)
 	case "action":
 		return a.executerActionsGemini(session, texte, rep, false)
 	}
@@ -1233,6 +1237,21 @@ func (a *Analyseur) executerActionsGemini(session, texte string, rep *gemini.Rep
 				descriptions = append(descriptions, d)
 			}
 		}
+		// Grosse action groupée (« éteins tout ») : on demande aussi confirmation
+		if a.ia.SeuilGroupe > 0 && len(prepares) >= a.ia.SeuilGroupe {
+			noms := make([]string, 0, 5)
+			for i, p := range prepares {
+				if i >= 5 {
+					break
+				}
+				noms = append(noms, nomAppareil(*p.app))
+			}
+			liste := strings.Join(noms, ", ")
+			if len(prepares) > 5 {
+				liste += " " + i18n.T("briefing.agenda.autres", len(prepares)-5)
+			}
+			descriptions = append(descriptions, i18n.T("confirmation.groupe", prepares[0].verbe, len(prepares), liste))
+		}
 		if len(descriptions) > 0 {
 			a.definirConfirmation(session, confirmationEnAttente{rep: rep, texte: texte})
 			msg := messageTexte(i18n.T("confirmation.demande", strings.Join(descriptions, " ; ")))
@@ -1244,7 +1263,10 @@ func (a *Analyseur) executerActionsGemini(session, texte string, rep *gemini.Rep
 	var succes []succesAction
 	var echecs, avertissements []string
 	question := ""
+	var sauvegardes []ha.EtatSauve
+	var nonAnnulables []string
 	for _, p := range prepares {
+		snap, _ := a.haClient.SauvegarderEtat(*p.app) // état d'avant, pour « annule ça »
 		retour, err := p.svc.ExecuterCommande(*p.app, p.verbe, p.params)
 		nom := nomAppareil(*p.app)
 		if err != nil {
@@ -1264,6 +1286,14 @@ func (a *Analyseur) executerActionsGemini(session, texte string, rep *gemini.Rep
 			continue
 		}
 		succes = append(succes, succesAction{verbe: p.verbe, nom: nom, params: p.params})
+		if snap != nil {
+			sauvegardes = append(sauvegardes, *snap)
+		} else {
+			nonAnnulables = append(nonAnnulables, nom)
+		}
+	}
+	if len(succes) > 0 {
+		a.empilerAnnulation(session, groupeAnnulation{quand: time.Now(), etats: sauvegardes, nonAnnulables: nonAnnulables})
 	}
 
 	nonExecutees := len(actions) - len(prepares) // refusées par la validation
@@ -1673,4 +1703,14 @@ func (a *Analyseur) executerRechercheGemini(texte string, rep *gemini.Reponse) (
 	}
 	msg := messageTexte(res.Resume)
 	return &msg, "", true, false, app, nil
+}
+
+// NbEntites : taille du catalogue d'entités en mémoire (pour /status).
+func (a *Analyseur) NbEntites() int { return len(a.catalogue) }
+
+// NbSessions : conversations en mémoire (pour /status).
+func (a *Analyseur) NbSessions() int {
+	a.muSessions.Lock()
+	defer a.muSessions.Unlock()
+	return len(a.memoires)
 }

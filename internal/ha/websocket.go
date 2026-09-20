@@ -18,6 +18,8 @@ type wsMessage struct {
 	ID          int             `json:"id,omitempty"`
 	Type        string          `json:"type"`
 	Domain      string          `json:"domain,omitempty"`
+	ItemID      string          `json:"item_id,omitempty"` // trace/list, trace/get
+	RunID       string          `json:"run_id,omitempty"`  // trace/get
 	Service     string          `json:"service,omitempty"`
 	Target      interface{}     `json:"target,omitempty"`
 	Data        interface{}     `json:"service_data,omitempty"`

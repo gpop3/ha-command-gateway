@@ -36,6 +36,10 @@ type ConfigIA struct {
 	// verbe invalide...), la rappeler une fois en lui expliquant l'erreur.
 	SecondeChance bool
 
+	// SeuilGroupe : au-delà de ce nombre d'actions d'un coup (« éteins tout »), demander
+	// une confirmation orale. 0 = jamais.
+	SeuilGroupe int
+
 	// Analyse : après une lecture d'historique ou un classement, rappeler l'IA pour
 	// qu'elle commente les chiffres (« est-ce normal ? »). Un appel en plus.
 	Analyse bool
@@ -50,6 +54,7 @@ func configIAParDefaut() ConfigIA {
 		Confirmation: true,
 		SecondeChance: true,
 		Analyse:       true,
+		SeuilGroupe:   5,
 	}
 }
 

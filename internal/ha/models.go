@@ -87,6 +87,7 @@ type PrevisionHoraire struct {
 	Temperature   float64 `json:"temperature"`
 	Condition     string  `json:"condition"`
 	TempLow       *float64 `json:"templow"`
+	PrecipProb    *float64 `json:"precipitation_probability"`
 	Precipitation float64 `json:"precipitation"`
 	WindSpeed     float64 `json:"wind_speed"`
 }

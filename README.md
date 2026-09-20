@@ -476,6 +476,39 @@ autorisée) avant toute exécution.
 - L'historique de HA est purgé au bout de `purge_keep_days` (10 jours par défaut) : au-delà, rien à lire.
 - Les entités de présence (`person`, `device_tracker`) restent interdites à l'IA.
 
+### Enquêtes, annulation, supervision
+
+Le type `enquete` regroupe ce qui demande au code de **rassembler des faits** avant que l'IA les explique
+(second appel) :
+
+- **Pourquoi une automatisation ne s'est pas déclenchée** : activée ou désactivée, dernier déclenchement,
+  dernières exécutions (traces HA) avec la **condition qui a bloqué**, déclencheurs et conditions. Nécessite
+  une automatisation avec un `id` (créée dans l'interface) et un token administrateur.
+- **Diagnostic d'une pièce** (« pourquoi il fait froid dans la chambre ? ») : entités de la pièce (fenêtres
+  ouvertes depuis quand, chauffage, températures…), météo extérieure, derniers événements des 6 heures.
+- **Diagnostic de la maison** (« y a-t-il un problème ? ») : capteurs indisponibles depuis plus de 24 h,
+  batteries faibles, ouvertures ouvertes depuis plus de 30 min, lumières allumées depuis plus de 8 h,
+  automatisations désactivées, mises à jour en attente.
+- **Résumé d'une période** (« que s'est-il passé cette nuit ? ») : journal global filtré sur ce qui compte
+  (portes, lumières, volets, automatisations, scripts) ; les détecteurs de mouvement sont comptés.
+- **Consommation d'énergie** (« combien j'ai consommé aujourd'hui ? ») : somme des hausses des compteurs
+  `device_class: energy` (kWh, Wh), remises à zéro comprises ; coût estimé si `TARIF_KWH` est renseigné.
+- **Conseil** (« faut-il arroser ? », « je peux étendre le linge ? ») : météo (actuelle, 3 jours, pluie des
+  12 prochaines heures) + mesures demandées, puis décision motivée de l'IA.
+- **Annuler** (« annule ça », « remets comme avant ») : l'état d'avant chaque commande est mémorisé (15 min,
+  5 commandes par session). Lumières, prises, ventilateurs, volets, thermostats, lecteurs média et
+  automatisations sont restaurés ; **un SMS, un script ou une automatisation exécutés ne sont pas annulables**
+  (l'assistant le dit).
+- **Actions groupées** : au-delà de `IA_CONFIRMATION_GROUPE` actions d'un coup (5 par défaut), une confirmation
+  orale est demandée (« exécuter "éteins" sur 12 appareils… »).
+
+**Supervision** (`ACTIVE_SERVER_HTTP=true`, accès local seulement) :
+
+- `GET /health` : sonde de **vie**. 200 si la boucle de traitement répond, 503 si elle est bloquée (TTS ou
+  STT figés…). Le `Dockerfile` l'utilise comme `HEALTHCHECK` : `docker ps` affiche « healthy » / « unhealthy ».
+- `GET /status` (avec `Authorization: Bearer <API_KEY>` si définie) : version, état du WebSocket HA, taille du
+  catalogue, sessions IA, disjoncteur Gemini (ouvert ? reprise dans N s), appels et tokens du jour, dernière erreur.
+
 ### Types de réponse
 
 - **`speak`** : réponse parlée (état lu dans le contexte, discussion).
