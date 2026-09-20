@@ -379,6 +379,81 @@ sont stockés positifs et soustraits dans le calcul.
 
 ---
 
+## IA (Gemini)
+
+[#ia-gemini](#ia-gemini)
+
+Gemini peut servir de moteur principal (`GEMINI_PRIMARY=true`) ou de secours
+quand le NLP classique ne comprend pas. **Gemini propose, le code décide** : chaque
+réponse est validée (entité existante du bon domaine, verbe connu, action
+autorisée) avant toute exécution.
+
+| Variable         | Défaut                  | Description                                                                                       |
+| ---------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `GEMINI_ACTIVE`  | `false`                 | Active l'IA.                                                                                      |
+| `GEMINI_PRIMARY` | `false`                 | L'IA passe avant le NLP classique.                                                                |
+| `GEMINI_MODEL`   | `gemini-3.1-flash-lite` | Modèle utilisé.                                                                                   |
+| `GEMINI_API_KEY` | *(vide)*                | Clé API (envoyée dans le header `x-goog-api-key`, jamais dans l'URL).                             |
+| `GEMINI_DEBUG`   | `false`                 | Journalise (INFO) le prompt + contexte envoyés, la réponse brute et les tokens. Sinon : `LOG_LEVEL=debug`. |
+| `GEMINI_PRESELECTION` | `true`             | Réduit le contexte aux entités pertinentes pour la phrase. **`false` = tout le contexte HA est envoyé à chaque appel.** |
+| `GEMINI_CONTEXT_MAX`  | `40`               | Entités retenues par le scoring NLP (les pièces citées s'y ajoutent).                             |
+| `GEMINI_MEMOIRE_TOURS` | `3`               | Échanges gardés par session ; `0` désactive la mémoire.                                           |
+| `GEMINI_MEMOIRE_SECONDES` | `180`          | Durée avant oubli d'une conversation inactive.                                                    |
+| `IA_CONFIRMATION` | `true`                 | Confirmation orale avant un SMS ou une automatisation ; `false` = exécution directe.              |
+| `IA_NUMEROS_AUTORISES` | *(vide → `WHITELIST`)* | Seuls numéros que l'IA peut viser dans une action de script.                                 |
+
+### Contexte réduit, mémoire, pièces et garde-fous
+
+- **Contexte réduit** : au lieu des centaines d'états de HA, Gemini reçoit les `GEMINI_CONTEXT_MAX`
+  entités les mieux classées par le scoring NLP pour la phrase, **toutes les entités des pièces citées**
+  (« éteins tout dans le salon »), et toujours les scripts, la météo, les minuteurs, les lecteurs média et
+  les entités virtuelles. `GEMINI_PRESELECTION=false` rétablit l'envoi complet. `LOG_LEVEL=debug` affiche
+  « Contexte IA : N entités envoyées sur M ». Si l'entité voulue manque, augmente `GEMINI_CONTEXT_MAX`.
+- **Pièces** : lues dans le registre des zones de HA (WebSocket, **token administrateur requis**) et
+  jointes à chaque entité (`piece`). Sans accès au registre, l'assistant fonctionne sans cette information.
+- **Mémoire de conversation** : les derniers échanges (3 par défaut, 3 minutes) sont renvoyés à Gemini pour
+  comprendre « et demain ? ». Elle est **propre à chaque session et jamais partagée** : la voix, la console,
+  chaque numéro SMS et **chaque conversation Home Assistant** (`conversation_id` envoyé par HA) ont la
+  leur. Elle vit en RAM, expire toute seule et n'est jamais écrite sur disque. Quand Gemini pose une question
+  (« quel numéro ? »), la voix reste à l'écoute et HA garde le micro ouvert (`continue_conversation`).
+- **Garde-fous** : une action de script qui vise un numéro absent de `IA_NUMEROS_AUTORISES` (par défaut
+  `WHITELIST`) est refusée ; un SMS et toute action sur une automatisation demandent une confirmation
+  orale (« Je vais … Tu confirmes ? » → oui / non, 30 s). La réponse est interprétée par le code, pas par l'IA.
+
+### Types de réponse
+
+- **`speak`** : réponse parlée (état lu dans le contexte, discussion).
+- **`read`** : lecture via les services HA — météo future (`weather.get_forecasts`),
+  agenda passé/futur (`debut`/`fin` calculés par l'IA à partir de la date fournie
+  dans le prompt), heure/date, résumé maison, minuteur. Le message est construit et
+  prononcé par le code : l'IA ne relit jamais le contenu (pas d'injection via un titre d'agenda).
+- **`history`** : état d'une entité **dans le passé** (« la lumière du salon était allumée hier
+  soir ? », « quelle température cette nuit ? »). Le code lit `/api/history/period` sur la période
+  calculée par l'IA (31 jours maximum) et résume : min / max / moyenne pour un capteur numérique,
+  durée dans chaque état et changements sinon. Les domaines de présence/sécurité restent exclus.
+- **`action`** : une ou **plusieurs** commandes (« ouvre salon 1 et 2 » → 2 actions,
+  8 maximum). Réponse de synthèse unique, avec gestion de l'échec partiel.
+
+### Ce que l'IA peut piloter
+
+- **Scripts** : les paramètres (`fields`) de chaque script sont lus dans HA
+  (`GET /api/services`) et fournis à l'IA ; un nom de paramètre inconnu est rejeté et un
+  champ obligatoire manquant empêche l'exécution.
+- **Spotify sur une enceinte** : `source=spotify` + `cible=<nom exact de source_list>` ;
+  l'appareil est choisi (`select_source`) avant de relancer la lecture.
+- **Minuteurs** : deux modes.
+  - **Echo (Alexa Media Player ≥ 3.4.0)** : verbe `minuteur` sur le `media_player` de l'Echo →
+    `media_player.play_media` avec `media_content_type: custom` (commande vocale « mets un minuteur
+    de 10 minutes » / « annule le minuteur »). Le minuteur est natif : il sonne sur l'Echo.
+  - **Helpers HA** : domaine `timer` (« Lance le minuteur cuisine dix minutes », « combien
+    reste-t-il ? »). La fin est annoncée à voix haute (événement HA `timer.finished`).
+- **Automatisations** : *exécuter* (`trigger`), *activer* (`turn_on`) ou *désactiver* (`turn_off`) uniquement. Cette
+  restriction est appliquée par le code (`actionsIAAutorisees` dans `internal/ha/contexte_ia.go`),
+  pas par le prompt. Les domaines `person`, `device_tracker`, `camera`, `lock`,
+  `alarm_control_panel` et `update` restent interdits à l'IA.
+
+---
+
 ## Logs et internationalisation (i18n)
 
 Toutes les sorties passent par le logger centralisé `internal/logx`. Chaque

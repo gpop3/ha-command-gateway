@@ -82,13 +82,15 @@ func (c *ConversationController) handleConversation(w http.ResponseWriter, r *ht
 
 	logx.InfoT("conversation.recue", req.Text)
 
-	res := c.service.Traiter(req.Text)
+	res := c.service.Traiter(req.Text, req.ConversationID)
 
 	resp := conversationResponse{
 		Speech:   res.Speech,
 		Handled:  res.Handled,
 		Verbe:    res.Verbe,
 		Appareil: res.Appareil,
+
+		ContinueConversation: res.Continuer,
 	}
 
 	writeJSON(w, http.StatusOK, resp)

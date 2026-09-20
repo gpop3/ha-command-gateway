@@ -33,6 +33,14 @@ type Analyseur struct {
 
 	gemini        *gemini.Client
 	geminiPrimary bool
+
+	// IA : réglages, mémoire de conversation et confirmations, par session
+	ia               ConfigIA
+	numerosAutorises map[string]bool
+	muSessions       sync.Mutex
+	memoires         map[string]*memoireSession
+	confirmations    map[string]confirmationEnAttente
+	ecoutes          map[string]time.Time
 }
 
 // ConfigDesambiguisation paramètre la proposition de choix multiples lorsque plusieurs entités obtiennent un score très proche.
@@ -84,6 +92,11 @@ func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisa
 		desamb:             desamb,
 		score:              score,
 		attentes:           make(map[string]enAttente),
+		ia:                 configIAParDefaut(),
+		numerosAutorises:   make(map[string]bool),
+		memoires:           make(map[string]*memoireSession),
+		confirmations:      make(map[string]confirmationEnAttente),
+		ecoutes:            make(map[string]time.Time),
 	}
 }
 
@@ -116,10 +129,14 @@ func (a *Analyseur) attentePour(session string) (enAttente, bool) {
 	return att, true
 }
 
-// AttenteDeChoix indique si une désambiguïsation est en attente pour la session.
+// AttenteDeChoix indique si l'assistant attend une réponse de l'utilisateur pour la
+// session : choix parmi plusieurs entités, confirmation d'une action sensible, ou
+// question posée par l'IA. La voix reste alors à l'écoute.
 func (a *Analyseur) AttenteDeChoix(session string) bool {
-	_, ok := a.attentePour(session)
-	return ok
+	if _, ok := a.attentePour(session); ok {
+		return true
+	}
+	return a.reponseAttendue(session)
 }
 
 // RafraichirCatalogue met à jour la liste des entités depuis HA
@@ -344,6 +361,20 @@ func (a *Analyseur) GenererSystemPrompt() string {
 func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
 	nettoye := strings.ToLower(texte)
 
+	// Confirmation en attente (action sensible proposée par l'IA)
+	if conf, ok := a.confirmationPour(session); ok {
+		a.effacerConfirmation(session)
+		switch interpreterConfirmation(nettoye) {
+		case reponseOui:
+			return a.executerActionsGemini(session, conf.rep, true)
+		case reponseNon:
+			msg := messageTexte(i18n.T("confirmation.annule"))
+			return &msg, "", true, false, nil
+		}
+		// Autre réponse : la confirmation est abandonnée, la phrase est traitée normalement
+	}
+	a.effacerEcoute(session)
+
 	if att, ok := a.attentePour(session); ok {
 		if idx, ok := interpreterChoix(nettoye, len(att.candidats)); ok {
 			a.effacerAttente(session)
@@ -355,7 +386,7 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 	}
 
 	if a.gemini != nil && a.geminiPrimary {
-		if msg, verbe, match, isAction, app := a.tenterGemini(texte); match {
+		if msg, verbe, match, isAction, app := a.tenterGemini(session, texte); match {
 			return msg, verbe, match, isAction, app
 		}
 	}
@@ -374,7 +405,7 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 	classement := a.classerAppareils(nettoye, domainesCandidats)
 	if len(classement) == 0 || classement[0].Score < a.score.Minimal {
 		if a.gemini != nil && !a.geminiPrimary {
-			if msg, verbe2, match, isAction, app := a.tenterGemini(texte); match {
+			if msg, verbe2, match, isAction, app := a.tenterGemini(session, texte); match {
 				return msg, verbe2, match, isAction, app
 			}
 		}
@@ -827,11 +858,54 @@ func (a *Analyseur) lireEtatMessage(svc ha.Service, app ha.Appareil, texteNettoy
 	return svc.EtatEnMessage(app, etat, etatCustom, dateParam)
 }
 
+// ---- IA (Gemini) ----
+
+const (
+	// maxActionsGemini borne le nombre d'actions / lectures exécutées pour une seule demande
+	maxActionsGemini = 12
+	// maxPlageAgenda borne la période d'agenda demandée par l'IA
+	maxPlageAgenda = 120 * 24 * time.Hour
+	// maxPlageHistorique borne la période d'historique demandée par l'IA
+	maxPlageHistorique = 31 * 24 * time.Hour
+)
+
+// messageTexte construit un message à partir d'un texte libre (réponse de l'IA).
+// Côté SMS / API le texte repasse par un fmt.Sprintf(texte, params...) : les « % »
+// y sont échappés, sinon « 45 % d'humidité » devenait « %!d(MISSING) ».
+// Côté voix le texte est lu tel quel.
+func messageTexte(texte string) types.Message {
+	return types.Message{
+		SMS:  types.MessageDetails{Texte: i18n.Echapper(texte)},
+		Voix: types.MessageDetails{Texte: texte},
+	}
+}
+
+// trouverAppareil cherche une entité par son entity_id dans le catalogue.
+func (a *Analyseur) trouverAppareil(entityID string) *ha.Appareil {
+	for _, cand := range a.catalogue {
+		if cand.EntityID == entityID {
+			c := cand
+			return &c
+		}
+	}
+	return nil
+}
+
 // tenterGemini interroge l'IA et valide strictement sa réponse avant toute
-// exécution : entity_id doit exister dans le catalogue, verbe doit être
-// reconnu par le domaine de cette entité précise.
-func (a *Analyseur) tenterGemini(texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
-	contexte, err := a.haClient.ContexteJSON(a.GetPieces())
+// exécution : Gemini propose, le code décide. Trois types de réponse :
+//   - speak  : réponse parlée (état lu dans le contexte, discussion) ;
+//   - read   : lecture via les services HA (météo future, agenda passé/futur, heure...) ;
+//   - history : état d'une entité dans le passé (historique HA sur une période) ;
+//   - action : une ou plusieurs commandes (« ouvre salon 1 et 2 »).
+func (a *Analyseur) tenterGemini(session, texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
+	_ = a.RafraichirCatalogue()
+
+	// Contexte réduit aux entités pertinentes (désactivable : GEMINI_PRESELECTION=false)
+	var retenus map[string]bool
+	if a.ia.Preselection && a.ia.ContexteMax > 0 {
+		retenus = a.preselectionIA(texte)
+	}
+	contexte, err := a.haClient.ContexteJSON(a.GetPieces(), retenus)
 	if err != nil {
 		logx.WarnT("gemini.contexte.erreur", err)
 		return nil, "", false, false, nil
@@ -841,43 +915,322 @@ func (a *Analyseur) tenterGemini(texte string) (*types.Message, string, bool, bo
 		return nil, "", false, false, nil
 	}
 
-	rep, err := a.gemini.Interroger(texte, contexte, string(capacites))
+	rep, err := a.gemini.Interroger(a.historiquePour(session), texte, contexte, string(capacites))
 	if err != nil {
 		logx.WarnT("gemini.appel.erreur", err)
 		return nil, "", false, false, nil
 	}
+	a.memoriser(session, texte, rep)
 
-	if rep.Type == "speak" {
-		msg := types.Message{
-			Voix: types.MessageDetails{Texte: rep.ReponseVocale},
-			SMS:  types.MessageDetails{Texte: rep.ReponseVocale},
+	switch rep.Type {
+	case "speak":
+		if rep.AttendReponse {
+			a.definirEcoute(session)
 		}
+		msg := messageTexte(rep.ReponseVocale)
 		return &msg, "", true, false, nil
+	case "read":
+		return a.executerLecturesGemini(rep)
+	case "history":
+		return a.executerHistoriqueGemini(rep)
+	case "action":
+		return a.executerActionsGemini(session, rep, false)
+	}
+	return nil, "", false, false, nil
+}
+
+// validerActionIA vérifie qu'une action proposée par l'IA est légitime : entité
+// existante du bon domaine, domaine non interdit, verbe connu, action autorisée.
+func (a *Analyseur) validerActionIA(act gemini.Action) (*ha.Appareil, ha.Service, string, bool) {
+	app := a.trouverAppareil(act.EntityID)
+	if app == nil || app.Domain != act.Domain || ha.DomaineExcluIA(app.Domain) {
+		logx.WarnT("gemini.entite.rejetee", act.EntityID)
+		return nil, nil, "", false
+	}
+	svc, ok := ha.Lookup(act.Domain)
+	if !ok {
+		return nil, nil, "", false
+	}
+	action, vok := svc.Verbe(act.Verbe)
+	if !vok {
+		logx.WarnT("gemini.verbe.rejete", act.Verbe, act.Domain)
+		return nil, nil, "", false
+	}
+	if !ha.ActionIAAutorisee(act.Domain, action) {
+		logx.WarnT("gemini.action.interdite", action, act.Domain)
+		return nil, nil, "", false
+	}
+	return app, svc, action, true
+}
+
+// parametresBruts convertit la liste {nom, valeur} de l'IA en map.
+func parametresBruts(act gemini.Action) map[string]string {
+	m := make(map[string]string, len(act.Parametres))
+	for _, p := range act.Parametres {
+		if nom := strings.TrimSpace(p.Nom); nom != "" {
+			m[nom] = strings.TrimSpace(p.Valeur)
+		}
+	}
+	return m
+}
+
+// actionPreparee est une action de l'IA validée, prête à être exécutée.
+type actionPreparee struct {
+	app    *ha.Appareil
+	svc    ha.Service
+	action string
+	verbe  string
+	params map[string]interface{}
+}
+
+// executerActionsGemini valide puis exécute une ou plusieurs actions proposées par
+// l'IA. Garde-fous : numéros de téléphone autorisés seulement, et confirmation orale
+// avant un SMS ou une automatisation (sauf si `confirme`, c'est-à-dire déjà confirmée).
+func (a *Analyseur) executerActionsGemini(session string, rep *gemini.Reponse, confirme bool) (*types.Message, string, bool, bool, *ha.Appareil) {
+	actions := rep.Actions
+	if len(actions) > maxActionsGemini {
+		actions = actions[:maxActionsGemini]
 	}
 
-	// --- validation stricte : Gemini propose, le code décide ---
-	var app *ha.Appareil
-	for _, cand := range a.catalogue {
-		if cand.EntityID == rep.EntityID {
-			c := cand
-			app = &c
+	var prepares []actionPreparee
+	numeroRefuse := false
+	for _, act := range actions {
+		app, svc, action, ok := a.validerActionIA(act)
+		if !ok {
+			continue
+		}
+
+		params := svc.ExtraireParams(act.Complement)
+		if params == nil {
+			params = map[string]interface{}{}
+		}
+		for k, v := range a.haClient.ParametresIAValides(*app, parametresBruts(act)) {
+			params[k] = v
+		}
+
+		if !a.destinatairesAutorises(app.Domain, params) {
+			logx.WarnT("gemini.numero.refuse", app.EntityID)
+			numeroRefuse = true
+			continue
+		}
+		prepares = append(prepares, actionPreparee{app: app, svc: svc, action: action, verbe: act.Verbe, params: params})
+	}
+
+	if len(prepares) == 0 {
+		if numeroRefuse {
+			msg := messageTexte(i18n.T("garde.numero.refuse"))
+			return &msg, "", true, false, nil
+		}
+		// Rien de valide : on laisse la main au NLP classique
+		return nil, "", false, false, nil
+	}
+
+	// Confirmation orale des actions sensibles
+	if a.ia.Confirmation && !confirme {
+		var descriptions []string
+		for _, p := range prepares {
+			if d, sensible := decrireActionSensible(*p.app, p.action, p.params); sensible {
+				descriptions = append(descriptions, d)
+			}
+		}
+		if len(descriptions) > 0 {
+			a.definirConfirmation(session, confirmationEnAttente{rep: rep})
+			msg := messageTexte(i18n.T("confirmation.demande", strings.Join(descriptions, " ; ")))
+			return &msg, "", true, false, prepares[0].app
+		}
+	}
+
+	premier := prepares[0].app
+	premierVerbe, dernierTexte := "", ""
+	nbOK := 0
+	for _, p := range prepares {
+		retour, err := p.svc.ExecuterCommande(*p.app, p.verbe, p.params)
+		if err != nil {
+			logx.WarnT("gemini.action.erreur", p.app.EntityID, err)
+			continue
+		}
+		nbOK++
+		if premierVerbe == "" {
+			premierVerbe = p.verbe
+		}
+		dernierTexte = retour
+	}
+
+	total := len(actions)
+	switch {
+	case nbOK == 0:
+		msg := messageTexte(i18n.T("erreur.action.parler"))
+		return &msg, premierVerbe, true, false, premier
+	case total == 1:
+		// Une seule action réussie : comportement historique (« j'ai <verbe> <appareil> »)
+		msg := types.Message{
+			SMS:  types.MessageDetails{Texte: dernierTexte},
+			Voix: types.MessageDetails{Texte: dernierTexte},
+		}
+		return &msg, premierVerbe, true, true, premier
+	case nbOK == total:
+		texte := strings.TrimSpace(rep.ReponseVocale)
+		if texte == "" {
+			texte = i18n.T("gemini.actions.ok", nbOK)
+		}
+		msg := messageTexte(texte)
+		return &msg, premierVerbe, true, false, premier
+	default:
+		msg := messageTexte(i18n.T("gemini.actions.partiel", nbOK, total))
+		return &msg, premierVerbe, true, false, premier
+	}
+}
+
+// executerLecturesGemini exécute les lectures demandées par l'IA en réutilisant
+// les services HA (météo, agenda, heure...) : le message est construit et prononcé
+// par le code, l'IA ne relit jamais le contenu (pas d'injection via un titre d'agenda).
+func (a *Analyseur) executerLecturesGemini(rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil) {
+	var msgs []types.Message
+	var premier *ha.Appareil
+
+	for i, act := range rep.Actions {
+		if i >= maxActionsGemini {
 			break
 		}
-	}
-	if app == nil || app.Domain != rep.Domain {
-		logx.WarnT("gemini.entite.rejetee", rep.EntityID)
-		return nil, "", false, false, nil
-	}
-	svc, ok := ha.Lookup(rep.Domain)
-	if !ok {
-		return nil, "", false, false, nil
-	}
-	if _, vok := svc.Verbe(rep.Verbe); !vok {
-		logx.WarnT("gemini.verbe.rejete", rep.Verbe, rep.Domain)
-		return nil, "", false, false, nil
+		app := a.trouverAppareil(act.EntityID)
+		if app == nil || app.Domain != act.Domain || ha.DomaineExcluIA(app.Domain) {
+			logx.WarnT("gemini.lecture.rejetee", act.EntityID)
+			continue
+		}
+		svc, ok := ha.Lookup(app.Domain)
+		if !ok {
+			continue
+		}
+
+		// Les services attendent un texte normalisé (sans accents), comme celui de Vosk
+		texteNorm := text.Normaliser(act.Complement)
+		params := svc.ExtraireParams(texteNorm)
+		if params == nil {
+			params = map[string]interface{}{}
+		}
+		if app.Domain == "agenda" {
+			appliquerPeriodeAgenda(params, act)
+		}
+
+		msgs = append(msgs, a.lireEtatMessage(svc, *app, texteNorm, params))
+		if premier == nil {
+			premier = app
+		}
 	}
 
-	params := svc.ExtraireParams(rep.Complement)
-	etatMsg := a.executerActionMessage(svc, *app, rep.Verbe, params)
-	return &etatMsg, rep.Verbe, true, true, app
+	if len(msgs) == 0 {
+		return nil, "", false, false, nil
+	}
+	msg := fusionnerMessages(msgs)
+	return &msg, "", true, false, premier
+}
+
+// fusionnerMessages concatène plusieurs messages (patterns + paramètres) en un seul.
+func fusionnerMessages(msgs []types.Message) types.Message {
+	if len(msgs) == 1 {
+		return msgs[0]
+	}
+	var sms, voix strings.Builder
+	var pSMS, pVoix []interface{}
+	for i, m := range msgs {
+		if i > 0 {
+			sms.WriteString("\n")
+			voix.WriteString(" ")
+		}
+		sms.WriteString(i18n.GetPattern(m.SMS.Texte))
+		pSMS = append(pSMS, m.SMS.Params...)
+		voix.WriteString(i18n.GetPattern(m.Voix.Texte))
+		pVoix = append(pVoix, m.Voix.Params...)
+	}
+	return types.Message{
+		SMS:  types.MessageDetails{Texte: sms.String(), Params: pSMS},
+		Voix: types.MessageDetails{Texte: voix.String(), Params: pVoix},
+	}
+}
+
+// appliquerPeriodeAgenda ajoute la période explicite (passé ou futur) demandée par l'IA.
+func appliquerPeriodeAgenda(params map[string]interface{}, act gemini.Action) {
+	debut, ok := parserDateIA(act.Debut)
+	if !ok {
+		return
+	}
+	fin, ok := parserDateIA(act.Fin)
+	if !ok || !fin.After(debut) {
+		fin = debut.Add(24 * time.Hour)
+	}
+	if fin.Sub(debut) > maxPlageAgenda {
+		fin = debut.Add(maxPlageAgenda)
+	}
+	params["debut"] = debut
+	params["fin"] = fin
+}
+
+// parserDateIA accepte RFC 3339, « 2006-01-02T15:04:05 » ou « 2006-01-02 » (heure locale).
+func parserDateIA(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, true
+	}
+	if t, err := time.ParseInLocation("2006-01-02T15:04:05", s, time.Local); err == nil {
+		return t, true
+	}
+	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+// executerHistoriqueGemini répond à une question sur le passé d'une entité en
+// lisant l'historique HA sur la période demandée par l'IA. Le résumé est construit
+// par le code (cf. ha.ResumerHistorique), l'IA ne relit rien.
+func (a *Analyseur) executerHistoriqueGemini(rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil) {
+	var textes []string
+	var premier *ha.Appareil
+	maintenant := time.Now()
+
+	for i, act := range rep.Actions {
+		if i >= maxActionsGemini {
+			break
+		}
+		app := a.trouverAppareil(act.EntityID)
+		if app == nil || app.Domain != act.Domain || ha.DomaineExcluIA(app.Domain) {
+			logx.WarnT("gemini.historique.rejete", act.EntityID)
+			continue
+		}
+
+		debut, ok := parserDateIA(act.Debut)
+		if !ok {
+			debut = maintenant.Add(-24 * time.Hour)
+		}
+		fin, ok := parserDateIA(act.Fin)
+		if !ok || fin.After(maintenant) {
+			fin = maintenant
+		}
+		if !fin.After(debut) {
+			logx.WarnT("gemini.historique.rejete", act.EntityID)
+			continue
+		}
+		if fin.Sub(debut) > maxPlageHistorique {
+			debut = fin.Add(-maxPlageHistorique)
+		}
+
+		texte, err := a.haClient.ResumerHistorique(*app, debut, fin)
+		if err != nil {
+			logx.WarnT("gemini.historique.erreur", app.EntityID, err)
+			continue
+		}
+		textes = append(textes, texte)
+		if premier == nil {
+			premier = app
+		}
+	}
+
+	if len(textes) == 0 {
+		return nil, "", false, false, nil
+	}
+	msg := messageTexte(strings.Join(textes, " "))
+	return &msg, "", true, false, premier
 }

@@ -5,6 +5,7 @@ import (
 	"ha-command-gateway/internal/core/adapters/gemini"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -50,7 +51,23 @@ func main() {
 			logx.WarnT("gemini.cle.manquante")
 		} else {
 			geminiClient := gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
+			geminiClient.ActiverDebug(cfg.GeminiDebug)
 			analyseur.DefinirGemini(geminiClient, cfg.GeminiPrimary)
+
+			numeros := cfg.IANumerosAutorises
+			if numeros == "" {
+				numeros = cfg.Whitelist
+			}
+			analyseur.DefinirConfigIA(nlp.ConfigIA{
+				Preselection:     cfg.GeminiPreselection,
+				ContexteMax:      cfg.GeminiContexteMax,
+				MemoireTours:     cfg.GeminiMemoireTours,
+				MemoireDuree:     time.Duration(cfg.GeminiMemoireSecondes) * time.Second,
+				Confirmation:     cfg.IAConfirmation,
+				NumerosAutorises: strings.Split(numeros, ","),
+			})
+			// Pré-charge le registre des pièces HA (évite la latence au premier appel)
+			go haClient.ZonesEntites()
 			logx.InfoT("gemini.active", cfg.GeminiModel, cfg.GeminiPrimary)
 		}
 	}
@@ -103,6 +120,11 @@ func main() {
 	if cfg.ActiveConsole {
 		mgr.Register(console.New(analyseur, speaker, bus))
 	}
+
+	// Fin d'un minuteur HA (timer.*) : annonce vocale, sérialisée par le bus
+	ha.DefinirSurMinuteurTermine(func(nom string) {
+		bus.Soumettre(func() { speaker.Parler("timer.termine", nom) })
+	})
 
 	// API HTTP
 	if cfg.ActiveServerHttp {

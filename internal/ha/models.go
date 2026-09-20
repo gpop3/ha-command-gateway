@@ -40,6 +40,9 @@ type AttributsEntite struct {
 	Pressure           float64  `json:"pressure"`
 	Visibility         float64  `json:"visibility"`
 	SourceList         []string `json:"source_list"`
+	Unit               string   `json:"unit_of_measurement"`
+	FinishesAt         string   `json:"finishes_at"`
+	Remaining          string   `json:"remaining"`
 }
 
 // ReponseIntent est la réponse de l'API /api/intent/handle

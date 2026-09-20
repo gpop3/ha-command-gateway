@@ -99,6 +99,19 @@ type Config struct {
 	GeminiPrimary bool
 	GeminiModel   string
 	GeminiAPIKey  string
+	GeminiDebug   bool // journalise le contexte envoyé à l'IA et sa réponse brute (niveau INFO)
+
+	// Réduction du contexte envoyé à l'IA
+	GeminiPreselection bool // false = tout le contexte HA est envoyé à chaque appel
+	GeminiContexteMax  int  // nombre d'entités retenues par le scoring
+
+	// Mémoire de conversation (par session)
+	GeminiMemoireTours    int // 0 = pas de mémoire
+	GeminiMemoireSecondes int
+
+	// Garde-fous
+	IAConfirmation     bool   // confirmation orale avant un SMS ou une automatisation
+	IANumerosAutorises string // numéros que l'IA peut viser (défaut : WHITELIST)
 }
 
 // Load charge la config depuis les variables d'environnement, avec des valeurs par défaut
@@ -200,6 +213,14 @@ func Load() *Config {
 		GeminiPrimary: getEnv("GEMINI_PRIMARY", "false") == "true",
 		GeminiModel:   getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
 		GeminiAPIKey:  getEnv("GEMINI_API_KEY", ""),
+		GeminiDebug:   getEnv("GEMINI_DEBUG", "false") == "true",
+
+		GeminiPreselection:    getEnv("GEMINI_PRESELECTION", "true") == "true",
+		GeminiContexteMax:     getEnvInt("GEMINI_CONTEXT_MAX", 40),
+		GeminiMemoireTours:    getEnvInt("GEMINI_MEMOIRE_TOURS", 3),
+		GeminiMemoireSecondes: getEnvInt("GEMINI_MEMOIRE_SECONDES", 180),
+		IAConfirmation:        getEnv("IA_CONFIRMATION", "true") == "true",
+		IANumerosAutorises:    getEnv("IA_NUMEROS_AUTORISES", ""),
 	}
 
 	// Construction automatique du whisperURL si non fourni

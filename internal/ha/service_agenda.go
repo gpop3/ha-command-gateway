@@ -112,6 +112,8 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 
 	if len(tousEvenements) == 0 {
 		switch horizon {
+		case "periode":
+			return i18n.T("agenda.vide.periode"), nil, nil
 		case "demain":
 			return i18n.T("agenda.vide.demain"), nil, nil
 		case "semaine":
@@ -124,6 +126,8 @@ func (s *ServiceAgenda) ConstructionMessage(horizon string, tousEvenements []Eve
 	}
 
 	switch horizon {
+	case "periode":
+		sb.WriteString(i18n.T("agenda.periode") + "\n")
 	case "demain":
 		sb.WriteString(i18n.T("agenda.demain") + "\n")
 	case "semaine":
@@ -178,6 +182,16 @@ func (s *ServiceAgenda) RecupererEtat(app Appareil, dateCible time.Time, params 
 
 	var reponse Agenda
 	reponse.Horizon = horizon
+
+	// Période explicite (passé ou futur), fournie par l'IA
+	if d, ok := params["debut"].(time.Time); ok {
+		if f, ok := params["fin"].(time.Time); ok && f.After(d) {
+			reponse.Horizon = "periode"
+			reponse.Evenements = s.getEvenements(d, f)
+			return nil, reponse, nil
+		}
+	}
+
 	var debut, fin time.Time
 	switch horizon {
 	case "demain":

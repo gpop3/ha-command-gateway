@@ -60,6 +60,7 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 	Register(newServiceDefault(c))
 	Register(NewServiceResumeMaison(c))
 	Register(NewServiceTime(c))
+	Register(NewServiceTimer(c))
 	Register(NewServiceAgenda(c))
 	Register(NewServiceWeather(c))
 
@@ -133,7 +134,7 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 		_ = resp.Body.Close()
 	}()
 
-	_, err = io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +142,7 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s", i18n.T("erreur.ha.reponse.post", resp.StatusCode, path))
 	}
-	return io.ReadAll(resp.Body)
+	return body, nil
 }
 
 // ---- API publique ----

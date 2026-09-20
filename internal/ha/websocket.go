@@ -157,6 +157,9 @@ func (c *wsClient) readLoop() {
 					c.stateCacheMu.Unlock()
 				}
 			}
+			if msg.Event != nil && msg.Event.EventType == "timer.finished" {
+				c.notifierMinuteurTermine(msg.Event.Data.EntityID)
+			}
 		}
 	}
 }
@@ -215,6 +218,19 @@ func (c *wsClient) chargerEtatsInitiaux() {
 		logx.InfoT("ws.ws.abonne.aux.changements")
 	}
 
+	// 3 bis. S'abonner à la fin des minuteurs (helpers timer.*)
+	timerSubID := int(c.counter.Add(1))
+	c.mu.Lock()
+	err = c.conn.WriteJSON(wsMessage{
+		ID:        timerSubID,
+		Type:      "subscribe_events",
+		EventType: "timer.finished",
+	})
+	c.mu.Unlock()
+	if err != nil {
+		logx.WarnT("ws.ws.subscribe.events", err)
+	}
+
 	// 4. Débloquer les appels en attente
 	c.closeReady()
 }
@@ -230,6 +246,24 @@ func (c *wsClient) closeReady() {
 		// Déjà fermé
 	default:
 		close(ch)
+	}
+}
+
+// surMinuteurTermine est appelé (dans sa propre goroutine) quand un minuteur HA se termine.
+var surMinuteurTermine func(nom string)
+
+// DefinirSurMinuteurTermine enregistre le callback de fin de minuteur.
+func DefinirSurMinuteurTermine(f func(nom string)) { surMinuteurTermine = f }
+
+func (c *wsClient) notifierMinuteurTermine(entityID string) {
+	nom := entityID
+	c.stateCacheMu.RLock()
+	if e, ok := c.stateCache[entityID]; ok && e.Attributes.FriendlyName != "" {
+		nom = e.Attributes.FriendlyName
+	}
+	c.stateCacheMu.RUnlock()
+	if f := surMinuteurTermine; f != nil {
+		go f(nom)
 	}
 }
 
