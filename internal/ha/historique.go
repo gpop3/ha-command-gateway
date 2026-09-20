@@ -128,6 +128,7 @@ type EchantillonHist struct {
 type EtatDuree struct {
 	Etat  string `json:"etat"`
 	Duree string `json:"duree"`
+	Fois  int    `json:"fois,omitempty"` // nombre de fois où cet état a commencé dans la période
 }
 
 // DonneesHist regroupe ce que le code sait d'une entité sur une période : le
@@ -186,7 +187,7 @@ func (c *Client) DonneesHistorique(app Appareil, debut, fin time.Time) (*Donnees
 	if nom == "" {
 		nom = app.FriendlyName
 	}
-	periode := i18n.T("historique.periode", formaterInstant(debut, true), formaterInstant(fin, true))
+	periode := decrirePeriode(debut, fin)
 	unite, classe := c.metaEntite(app.EntityID)
 	d := &DonneesHist{Nom: nom, Piece: c.ZonesEntites()[app.EntityID], TypeMesure: classe, Unite: unite, Periode: periode}
 
@@ -200,8 +201,8 @@ func (c *Client) DonneesHistorique(app Appareil, debut, fin time.Time) (*Donnees
 		d.Numerique = true
 		arrondi := func(v float64) float64 { return math.Round(v*10) / 10 }
 		moy := arrondi(st.Moyenne)
-		d.Min = &ValeurHeure{Valeur: arrondi(st.Min), Heure: formaterInstant(st.TMin, avecJour)}
-		d.Max = &ValeurHeure{Valeur: arrondi(st.Max), Heure: formaterInstant(st.TMax, avecJour)}
+		d.Min = &ValeurHeure{Valeur: arrondi(st.Min), Heure: formaterQuand(st.TMin, avecJour)}
+		d.Max = &ValeurHeure{Valeur: arrondi(st.Max), Heure: formaterQuand(st.TMax, avecJour)}
 		d.Moyenne = &moy
 		d.Echantillons = echantillonner(segs, nbEchantillons, avecJour)
 		d.Resume, _ = resumeNumerique(nom, periode, segs, unite)
@@ -209,23 +210,27 @@ func (c *Client) DonneesHistorique(app Appareil, debut, fin time.Time) (*Donnees
 	}
 
 	durees := map[string]time.Duration{}
+	fois := map[string]int{}
 	var ordre []string
-	for _, s := range segs {
+	for i, s := range segs {
 		if _, ok := durees[s.Etat]; !ok {
 			ordre = append(ordre, s.Etat)
 		}
 		durees[s.Etat] += s.Fin.Sub(s.Debut)
+		if i > 0 { // le premier segment est l'état de départ, pas un début
+			fois[s.Etat]++
+		}
 	}
 	sort.SliceStable(ordre, func(i, j int) bool { return durees[ordre[i]] > durees[ordre[j]] })
 	for _, e := range ordre {
-		d.Etats = append(d.Etats, EtatDuree{Etat: traduireEtat(app.Domain, e), Duree: decrireDuree(durees[e])})
+		d.Etats = append(d.Etats, EtatDuree{Etat: traduireEtat(app.Domain, e), Duree: decrireDuree(durees[e]), Fois: fois[e]})
 	}
 	changements := segs[1:]
 	if len(changements) > nbChangementsAffiches {
 		changements = changements[len(changements)-nbChangementsAffiches:]
 	}
 	for _, s := range changements {
-		d.Changements = append(d.Changements, i18n.T("historique.changement.ligne", traduireEtat(app.Domain, s.Etat), formaterInstant(s.Debut, avecJour)))
+		d.Changements = append(d.Changements, i18n.T("historique.changement.ligne", traduireEtat(app.Domain, s.Etat), formaterQuand(s.Debut, avecJour)))
 	}
 	d.Resume = resumeEtats(app.Domain, nom, periode, segs)
 	return d, nil
@@ -248,17 +253,56 @@ func memeJour(a, b time.Time) bool {
 	return a.Year() == b.Year() && a.YearDay() == b.YearDay()
 }
 
-// formaterInstant : « 22h », « 6h05 », avec le jour (« samedi 19 septembre 22h ») si demandé.
-func formaterInstant(t time.Time, avecJour bool) string {
+// jourRelatif : « aujourd'hui », « hier », « avant-hier », « demain », sinon « samedi 19 septembre ».
+func jourRelatif(t time.Time) string {
 	t = t.Local()
-	heure := fmt.Sprintf("%dh", t.Hour())
+	now := time.Now().Local()
+	minuit := func(x time.Time) time.Time { return time.Date(x.Year(), x.Month(), x.Day(), 0, 0, 0, 0, time.Local) }
+	jours := int(math.Round(minuit(now).Sub(minuit(t)).Hours() / 24))
+	switch jours {
+	case 0:
+		return "aujourd'hui"
+	case 1:
+		return "hier"
+	case 2:
+		return "avant-hier"
+	case -1:
+		return "demain"
+	}
+	return fmt.Sprintf("%s %d %s", joursFR[t.Weekday()], t.Day(), moisFR[t.Month()-1])
+}
+
+func heureCourte(t time.Time) string {
+	t = t.Local()
 	if t.Minute() > 0 {
-		heure = fmt.Sprintf("%dh%02d", t.Hour(), t.Minute())
+		return fmt.Sprintf("%dh%02d", t.Hour(), t.Minute())
 	}
+	return fmt.Sprintf("%dh", t.Hour())
+}
+
+// formaterInstant : « 22h », « 6h05 » ; avec le jour, « hier 22h » ou « samedi 19 septembre 22h ».
+func formaterInstant(t time.Time, avecJour bool) string {
 	if !avecJour {
-		return heure
+		return heureCourte(t)
 	}
-	return fmt.Sprintf("%s %d %s %s", joursFR[t.Weekday()], t.Day(), moisFR[t.Month()-1], heure)
+	return jourRelatif(t) + " " + heureCourte(t)
+}
+
+// formaterQuand : le complément de temps d'un événement, prêt à être inséré dans une
+// phrase : « à 6h05 » ; avec le jour, « hier à 22h » ou « samedi 19 septembre à 22h ».
+func formaterQuand(t time.Time, avecJour bool) string {
+	if !avecJour {
+		return "à " + heureCourte(t)
+	}
+	return jourRelatif(t) + " à " + heureCourte(t)
+}
+
+// decrirePeriode : « aujourd'hui, entre 7h et 15h30 » ou « entre hier 22h et aujourd'hui 6h ».
+func decrirePeriode(debut, fin time.Time) string {
+	if memeJour(debut, fin) {
+		return i18n.T("historique.periode.jour", jourRelatif(debut), heureCourte(debut), heureCourte(fin))
+	}
+	return i18n.T("historique.periode.multi", formaterInstant(debut, true), formaterInstant(fin, true))
 }
 
 // uniteParlee remplace les unités courantes par leur lecture à voix haute.
@@ -350,8 +394,8 @@ func resumeNumerique(nom, periode string, segs []segmentHistorique, unite string
 	}
 	avecJour := !memeJour(segs[0].Debut, segs[len(segs)-1].Fin)
 	return i18n.T("historique.numerique", nom, periode,
-		formaterValeur(st.Min, unite), formaterInstant(st.TMin, avecJour),
-		formaterValeur(st.Max, unite), formaterInstant(st.TMax, avecJour),
+		formaterValeur(st.Min, unite), formaterQuand(st.TMin, avecJour),
+		formaterValeur(st.Max, unite), formaterQuand(st.TMax, avecJour),
 		formaterValeur(st.Moyenne, unite)), true
 }
 
@@ -369,12 +413,16 @@ func traduireEtat(domaine, etat string) string {
 // resumeEtats : durée passée dans chaque état + liste des changements.
 func resumeEtats(domaine, nom, periode string, segs []segmentHistorique) string {
 	durees := map[string]time.Duration{}
+	fois := map[string]int{}
 	var ordre []string
-	for _, s := range segs {
+	for i, s := range segs {
 		if _, ok := durees[s.Etat]; !ok {
 			ordre = append(ordre, s.Etat)
 		}
 		durees[s.Etat] += s.Fin.Sub(s.Debut)
+		if i > 0 {
+			fois[s.Etat]++
+		}
 	}
 
 	if len(ordre) == 1 {
@@ -387,7 +435,11 @@ func resumeEtats(domaine, nom, periode string, segs []segmentHistorique) string 
 		if durees[e] < time.Minute {
 			continue
 		}
-		parts = append(parts, i18n.T("historique.etat.duree", traduireEtat(domaine, e), decrireDuree(durees[e])))
+		if fois[e] >= 2 {
+			parts = append(parts, i18n.T("historique.etat.duree.fois", traduireEtat(domaine, e), decrireDuree(durees[e]), fois[e]))
+		} else {
+			parts = append(parts, i18n.T("historique.etat.duree", traduireEtat(domaine, e), decrireDuree(durees[e])))
+		}
 	}
 	if len(parts) == 0 {
 		parts = append(parts, traduireEtat(domaine, ordre[0]))
@@ -407,7 +459,7 @@ func resumeEtats(domaine, nom, periode string, segs []segmentHistorique) string 
 	}
 	var lignes []string
 	for _, s := range changements {
-		lignes = append(lignes, i18n.T("historique.changement.ligne", traduireEtat(domaine, s.Etat), formaterInstant(s.Debut, avecJour)))
+		lignes = append(lignes, i18n.T("historique.changement.ligne", traduireEtat(domaine, s.Etat), formaterQuand(s.Debut, avecJour)))
 	}
 	if cle == "historique.changements.derniers" {
 		return texte + " " + i18n.T(cle, len(segs)-1, strings.Join(lignes, ", "))
@@ -624,14 +676,14 @@ func (c *Client) ClasserCapteurs(classe, critere, piece string, debut, fin time.
 	for _, l := range lignes {
 		item := i18n.T("classement.ligne", l.label, formaterValeur(l.valeur, l.unite))
 		if l.aInstant {
-			item += " " + i18n.T("classement.a", formaterInstant(l.t, avecJour))
+			item += " " + formaterQuand(l.t, avecJour)
 		}
 		items = append(items, item)
 	}
 
 	libelle := i18n.T("critere." + critere)
 	if periodique && (critere == "max" || critere == "min" || critere == "moyenne") {
-		libelle += " " + i18n.T("historique.periode", formaterInstant(debut, true), formaterInstant(fin, true))
+		libelle += " " + decrirePeriode(debut, fin)
 	}
 	return i18n.T("classement.resultat", mesure, dans, libelle, strings.Join(items, " ; ")), nil
 }

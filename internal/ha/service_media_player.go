@@ -270,14 +270,21 @@ func (s *ServiceMediaPlayer) jouerSpotify(app Appareil, params map[string]interf
 // Le minuteur apparaît dans l'app Alexa et sonne sur l'Echo : rien à annoncer côté assistant.
 // params["duree"] : « 10 minutes », « 1h30 »... ou « annuler ».
 func (s *ServiceMediaPlayer) minuteurAlexa(app Appareil, params map[string]interface{}) (string, error) {
-	duree, _ := params["duree"].(string)
-
+	// La durée vient de l'IA (params["duree"]) ; à défaut, on la cherche dans la phrase
+	// de l'utilisateur (params["texte"]) : l'IA l'oublie parfois dans ses paramètres.
 	var phrase string
-	if d, ok := analyserDuree(duree); ok {
-		phrase = i18n.T("media.alexa.minuteur.regler", decrireDuree(d))
-	} else if strings.Contains(text.Normaliser(duree), "annul") {
-		phrase = i18n.T("media.alexa.minuteur.annuler")
-	} else {
+	for _, cle := range []string{"duree", "texte"} {
+		texte, _ := params[cle].(string)
+		if d, ok := analyserDuree(texte); ok {
+			phrase = i18n.T("media.alexa.minuteur.regler", decrireDuree(d))
+			break
+		}
+		if strings.Contains(text.Normaliser(texte), "annul") {
+			phrase = i18n.T("media.alexa.minuteur.annuler")
+			break
+		}
+	}
+	if phrase == "" {
 		return "", fmt.Errorf("%s", i18n.T("media.alexa.minuteur.duree.manquante"))
 	}
 

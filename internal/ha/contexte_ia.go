@@ -69,6 +69,8 @@ var attributsWhitelist = map[string][]string{
 	"light":        {"brightness"},
 	"media_player": {"source_list", "source", "volume_level"},
 	"timer":        {"duration", "finishes_at", "remaining"},
+	"automation":   {"last_triggered"},
+	"script":       {"last_triggered"},
 }
 
 // ChampScript décrit un paramètre déclaré par un script HA (section `fields`).
@@ -80,8 +82,9 @@ type ChampScript struct {
 }
 
 type etatRawPourContexte struct {
-	EntityID   string                 `json:"entity_id"`
-	State      string                 `json:"state"`
+	EntityID    string                 `json:"entity_id"`
+	State       string                 `json:"state"`
+	LastChanged string                 `json:"last_changed"`
 	Attributes map[string]interface{} `json:"attributes"`
 }
 
@@ -95,6 +98,7 @@ type EntiteContexte struct {
 	Description  string                 `json:"description,omitempty"` // scripts : ce que fait le script
 	Parametres   map[string]ChampScript `json:"parametres,omitempty"` // scripts : paramètres acceptés
 	Piece        string                 `json:"piece,omitempty"`      // pièce HA de l'entité (registre des zones)
+	Depuis       string                 `json:"depuis,omitempty"`     // depuis quand l'état actuel dure (heure locale)
 }
 
 // ---- Paramètres des scripts ----
@@ -320,6 +324,14 @@ func (c *Client) ContexteJSON(pieces []Piece, retenus map[string]bool) (string, 
 			State:        e.State,
 			Attributs:    attrsFiltres,
 			Piece:        zones[e.EntityID],
+		}
+		// « Depuis quand ? » : utile pour les questions « la porte est ouverte depuis
+		// longtemps ? » ou « le chauffage tourne depuis 6h, c'est normal ? ». Inutile pour
+		// les capteurs numériques, dont l'état change sans cesse.
+		if domaine != "sensor" && domaine != "weather" {
+			if t, err := time.Parse(time.RFC3339, e.LastChanged); err == nil {
+				ent.Depuis = t.Local().Format("2006-01-02 15:04")
+			}
 		}
 		if domaine == "script" {
 			if champs == nil {

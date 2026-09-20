@@ -1011,6 +1011,10 @@ func (a *Analyseur) traiterReponseGemini(session, texte string, rep *gemini.Repo
 		return a.executerHistoriqueGemini(texte, rep)
 	case "classement":
 		return a.executerClassementGemini(texte, rep)
+	case "journal":
+		return a.executerJournalGemini(texte, rep)
+	case "recherche":
+		return a.executerRechercheGemini(texte, rep)
 	case "action":
 		return a.executerActionsGemini(session, texte, rep, false)
 	}
@@ -1306,6 +1310,17 @@ func (a *Analyseur) executerLecturesGemini(texte string, rep *gemini.Reponse) (*
 			rejets = append(rejets, raison)
 			continue
 		}
+		// Un calendrier (calendar.xxx) se lit par l'agenda : l'IA propose souvent
+		// directement l'entité du calendrier. Sans filtre explicite de sa part, on
+		// restreint la lecture à ce calendrier.
+		if app.Domain == "calendar" {
+			if ag := a.trouverAppareil("agenda.home"); ag != nil {
+				if _, filtre := parametresBruts(act)["calendrier"]; !filtre {
+					act.Parametres = append(act.Parametres, gemini.Parametre{Nom: "calendrier", Valeur: app.EntityID})
+				}
+				app = ag
+			}
+		}
 		svc, ok := ha.Lookup(app.Domain)
 		if !ok {
 			continue
@@ -1461,12 +1476,11 @@ func (a *Analyseur) executerHistoriqueGemini(texte string, rep *gemini.Reponse) 
 		return nil, "", false, false, nil, rejets
 	}
 
-	// Deuxième appel : l'IA commente les chiffres (repli sur le résumé du code en cas d'échec)
-	if rep.Analyser {
-		if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"mesures": donnees}); analyse != "" {
-			msg := messageTexte(analyse)
-			return &msg, "", true, false, premier, nil
-		}
+	// Deuxième appel : l'IA formule la réponse en langage naturel (et donne son avis si
+	// demandé). En cas d'échec, on garde le résumé du code.
+	if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"avis_demande": rep.Analyser, "mesures": donnees}); analyse != "" {
+		msg := messageTexte(analyse)
+		return &msg, "", true, false, premier, nil
 	}
 
 	msg := messageTexte(strings.Join(textes, " "))
@@ -1521,10 +1535,8 @@ func (a *Analyseur) executerClassementGemini(texte string, rep *gemini.Reponse) 
 		logx.WarnT("gemini.classement.erreur", err)
 		return nil, "", false, false, nil, nil
 	}
-	if rep.Analyser {
-		if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"classement": res}); analyse != "" {
-			res = analyse
-		}
+	if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"avis_demande": rep.Analyser, "classement": res}); analyse != "" {
+		res = analyse
 	}
 	msg := messageTexte(res)
 	return &msg, "", true, false, nil, nil
@@ -1549,4 +1561,116 @@ func (a *Analyseur) briefingIA(question string, svc ha.Service) *types.Message {
 	}
 	msg := messageTexte(texte)
 	return &msg
+}
+
+// executerJournalGemini répond à « qui a allumé… ? », « pourquoi… ? », « la dernière fois
+// que… ? » en lisant le journal HA (avec la cause de chaque changement). Le texte est
+// ensuite reformulé oralement par l'IA (repli : le résumé du code).
+func (a *Analyseur) executerJournalGemini(texte string, rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
+	var textes []string
+	var donnees []*ha.DonneesJournal
+	var premier *ha.Appareil
+	var rejets []string
+	maintenant := time.Now()
+
+	for i, act := range rep.Actions {
+		if i >= maxActionsGemini {
+			break
+		}
+		act.Domain = domaineDeEntite(act.EntityID, act.Domain)
+		app := a.trouverAppareil(act.EntityID)
+		if raison := raisonEntite(act, app); raison != "" {
+			logx.WarnT("gemini.historique.rejete", act.EntityID)
+			rejets = append(rejets, raison)
+			continue
+		}
+
+		debut, ok := parserDateIA(act.Debut)
+		if !ok {
+			debut = maintenant.Add(-7 * 24 * time.Hour)
+		}
+		fin, ok := parserDateIA(act.Fin)
+		if !ok || fin.After(maintenant) {
+			fin = maintenant
+		}
+		if !fin.After(debut) {
+			continue
+		}
+		if fin.Sub(debut) > maxPlageHistorique {
+			debut = fin.Add(-maxPlageHistorique)
+		}
+
+		opts := parametresBruts(act)
+		dernier := strings.EqualFold(opts["dernier"], "true")
+		d, err := a.haClient.JournalEntite(*app, debut, fin, opts["etat"], dernier)
+		if err != nil {
+			logx.WarnT("gemini.journal.erreur", app.EntityID, err)
+			continue
+		}
+		textes = append(textes, d.Resume)
+		donnees = append(donnees, d)
+		if premier == nil {
+			premier = app
+		}
+	}
+
+	if len(textes) == 0 {
+		return nil, "", false, false, nil, rejets
+	}
+	if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"avis_demande": rep.Analyser, "journal": donnees}); analyse != "" {
+		msg := messageTexte(analyse)
+		return &msg, "", true, false, premier, nil
+	}
+	msg := messageTexte(strings.Join(textes, " "))
+	return &msg, "", true, false, premier, nil
+}
+
+// executerRechercheGemini cherche un événement dans la courbe d'un capteur numérique
+// (plus forte chute, baisse d'au moins X, passage sous un seuil...). C'est le code qui
+// cherche dans les points de l'historique ; l'IA fournit le capteur, le seuil, la période.
+func (a *Analyseur) executerRechercheGemini(texte string, rep *gemini.Reponse) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
+	r := rep.Recherche
+	if r == nil || strings.TrimSpace(r.EntityID) == "" || strings.TrimSpace(r.Mode) == "" {
+		return nil, "", false, false, nil, []string{i18n.T("gemini.rejet.recherche")}
+	}
+
+	act := gemini.Action{EntityID: r.EntityID}
+	act.Domain = domaineDeEntite(act.EntityID, "")
+	app := a.trouverAppareil(r.EntityID)
+	if raison := raisonEntite(act, app); raison != "" {
+		logx.WarnT("gemini.historique.rejete", r.EntityID)
+		return nil, "", false, false, nil, []string{raison}
+	}
+
+	maintenant := time.Now()
+	debut, ok := parserDateIA(r.Debut)
+	if !ok {
+		debut = maintenant.Add(-24 * time.Hour)
+	}
+	fin, ok := parserDateIA(r.Fin)
+	if !ok || fin.After(maintenant) {
+		fin = maintenant
+	}
+	if !fin.After(debut) {
+		return nil, "", false, false, nil, nil
+	}
+	if fin.Sub(debut) > maxPlageHistorique {
+		debut = fin.Add(-maxPlageHistorique)
+	}
+
+	valeur, _ := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(r.Valeur), ",", "."), 64)
+	minutes, _ := strconv.Atoi(strings.TrimSpace(r.FenetreMinutes))
+	mode := strings.ToLower(strings.TrimSpace(r.Mode))
+
+	res, err := a.haClient.RechercheEvenement(*app, mode, valeur, time.Duration(minutes)*time.Minute, debut, fin)
+	if err != nil {
+		logx.WarnT("gemini.recherche.erreur", r.EntityID, err)
+		return nil, "", false, false, nil, nil
+	}
+	if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"avis_demande": rep.Analyser, "recherche": res}); analyse != "" {
+		msg := messageTexte(analyse)
+		return &msg, "", true, false, app, nil
+	}
+	msg := messageTexte(res.Resume)
+	return &msg, "", true, false, app, nil
 }

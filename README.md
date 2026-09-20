@@ -439,6 +439,9 @@ autorisée) avant toute exécution.
 
 ### Analyse, classement et briefing
 
+- **Formulation naturelle** : les réponses d'historique, de classement, de journal et de recherche sont
+  reformulées à l'oral par un second appel léger (« hier soir, il a fait entre 18 et 21 degrés… »), au lieu
+  d'un compte rendu chiffré récité. Sans IA (ou si l'appel échoue), le résumé du code est lu tel quel.
 - **Analyse en deux appels** : « donne-moi les stats de la serre aujourd'hui, est-ce normal ? » → appel 1 :
   l'IA choisit l'entité et la période ; le code lit l'historique et calcule min / max (avec leur heure) /
   moyenne ; appel 2 (léger, sans le contexte maison) : l'IA commente ces chiffres. Elle ne connaît pas
@@ -454,6 +457,24 @@ autorisée) avant toute exécution.
   lui-même le briefing, sans saint du jour. « C'est quel saint aujourd'hui ? » est une simple question à l'IA.
   Les titres d'agenda et de recettes sont transmis à l'IA pour ce second appel ; elle ne peut rien exécuter à ce
   stade (sa sortie n'est que du texte lu à voix haute).
+
+### Journal, recherche dans les courbes et « depuis quand »
+
+- **Journal** (`journal`) : « qui a allumé la prise de la serre hier ? », « pourquoi la lumière du couloir s'est
+  allumée ? », « la dernière fois que l'automatisation X a tourné ? ». Le code lit `/api/logbook` et donne, pour
+  chaque changement, **ce qui l'a provoqué** : une automatisation, un script, un utilisateur HA, ou « sans auteur
+  identifié » (bouton physique, appareil). Le nom de l'utilisateur demande un token administrateur ; conseil :
+  crée un utilisateur HA dédié à l'assistant pour reconnaître ce qui vient de la voix ou d'Alexa.
+- **Recherche dans une courbe** (`recherche`) : « quand la température a chuté de 17 degrés ? » (éventuellement
+  « en moins de 30 minutes »), « la plus forte baisse de la nuit », « quand est-elle passée sous 15 ° ? ».
+  Le code cherche dans les points de l'historique ; l'IA fournit le capteur, le seuil et la période.
+- **Depuis quand** : chaque entité (hors capteurs numériques) porte l'heure de son dernier changement d'état,
+  et les automatisations / scripts leur `last_triggered` : « la porte est ouverte depuis longtemps ? »,
+  « le chauffage tourne depuis 6h, c'est normal ? ».
+- **Combien de fois / combien de temps** : l'historique d'un état (porte, chauffage…) indique le temps total et le
+  nombre de fois ; comparer deux périodes = deux lectures d'historique, commentées par le second appel.
+- L'historique de HA est purgé au bout de `purge_keep_days` (10 jours par défaut) : au-delà, rien à lire.
+- Les entités de présence (`person`, `device_tracker`) restent interdites à l'IA.
 
 ### Types de réponse
 
