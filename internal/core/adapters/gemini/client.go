@@ -90,7 +90,6 @@ func (c *Client) Interroger(demande, contexteJSON, capacitesJSON string) (*Repon
 		},
 		"contents": []map[string]interface{}{
 			{"role": "user", "parts": []map[string]string{{"text": demande}}},
-			{"google_search": map[string]interface{}{}},
 		},
 		"generationConfig": map[string]interface{}{
 			"response_mime_type": "application/json",
