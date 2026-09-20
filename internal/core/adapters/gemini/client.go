@@ -62,6 +62,11 @@ Règles strictes :
 - Pour une question ou discussion générale sans rapport avec la maison,
   réponds aussi en type="speak" avec tes connaissances générales.
 - reponse_vocale : phrase courte et naturelle à l'oral, en français.
+- Pour une question sur l'actualité, un fait récent, ou toute info qui a pu
+  changer depuis ta dernière mise à jour (météo hors-HA, actualité, sport...),
+  utilise la recherche web avant de répondre plutôt que de deviner.
+- Pour une question sur un état de la maison, base-toi UNIQUEMENT sur "contexte" —
+  jamais sur une recherche web pour ça.
 
 Capacités par domaine (JSON) :
 %s
@@ -85,6 +90,7 @@ func (c *Client) Interroger(demande, contexteJSON, capacitesJSON string) (*Repon
 		},
 		"contents": []map[string]interface{}{
 			{"role": "user", "parts": []map[string]string{{"text": demande}}},
+			{"google_search": map[string]interface{}{}},
 		},
 		"generationConfig": map[string]interface{}{
 			"response_mime_type": "application/json",
