@@ -1,6 +1,9 @@
 package nlp
 
 import (
+	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -8,6 +11,7 @@ import (
 	"ha-command-gateway/internal/ha"
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
+	"ha-command-gateway/internal/utils/text"
 	"ha-command-gateway/pkg/types"
 )
 
@@ -61,6 +65,47 @@ func (a *Analyseur) depilerAnnulation(session string) (groupeAnnulation, bool) {
 	return groupeAnnulation{}, false
 }
 
+// phrasesAnnulation : « annule ça », « annule l'action », « remets comme avant »…
+var phrasesAnnulation = []string{
+	"annule ca", "annule cela", "annule l'action", "annule cette action", "annule la derniere action",
+	"annule la commande", "annule la derniere commande", "annule le dernier ordre", "annule tout ca",
+	"annule ce que tu viens de faire", "annule ce que tu as fait", "remets comme avant", "remets comme c'etait",
+	"remets comme il etait", "remets comme elle etait", "reviens en arriere", "retour en arriere",
+	"defais ca", "fais marche arriere",
+}
+
+func normaliserPourPhrases(s string) string {
+	t := text.Normaliser(s)
+	t = strings.NewReplacer("’", " ", "'", " ", "-", " ", ".", " ", ",", " ", "!", " ", "?", " ", ";", " ", ":", " ").Replace(t)
+	return " " + strings.Join(strings.Fields(t), " ") + " "
+}
+
+// interpreterAnnulation reconnaît une demande d'annulation de la dernière commande.
+func interpreterAnnulation(texte string) bool {
+	t := normaliserPourPhrases(texte)
+	if len(strings.Fields(t)) > 9 {
+		return false
+	}
+	for _, p := range phrasesAnnulation {
+		if strings.Contains(t, normaliserPourPhrases(p)) {
+			return true
+		}
+	}
+	return false
+}
+
+// aUneAnnulation : une commande récente de la session peut-elle être annulée ?
+func (a *Analyseur) aUneAnnulation(session string) bool {
+	a.muSessions.Lock()
+	defer a.muSessions.Unlock()
+	for _, g := range a.annulations[session] {
+		if time.Since(g.quand) < dureeAnnulation {
+			return true
+		}
+	}
+	return false
+}
+
 func sansDoublons(noms []string) []string {
 	vus := map[string]bool{}
 	var out []string
@@ -87,6 +132,7 @@ func (a *Analyseur) executerAnnulation(session string) (*types.Message, string, 
 	// Ordre inverse : si une entité a été touchée deux fois, on finit sur son état le plus ancien
 	for i := len(g.etats) - 1; i >= 0; i-- {
 		e := g.etats[i]
+		logx.InfoT("annulation.restauration", e.Nom, e.Etat)
 		if err := a.haClient.Restaurer(e); err != nil {
 			logx.WarnT("annulation.echec.log", e.EntityID, err)
 			echecs = append(echecs, e.Nom)
@@ -169,6 +215,70 @@ func (a *Analyseur) executerEnqueteGemini(session, texte string, rep *gemini.Rep
 	case "annuler":
 		return a.executerAnnulation(session)
 
+	case "notifier":
+		return a.executerNotification(session, texte, rep, false)
+
+	case "expliquer":
+		return a.executerExplication(session, texte)
+
+	case "planifier":
+		return a.executerPlanification(session, e)
+
+	case "bilan":
+		debut, fin := periode(maintenant.Add(-7*24*time.Hour), 14*24*time.Hour)
+		data, resume, err = a.haClient.BilanSemaine(debut, fin)
+
+	case "repas":
+		if !ha.MealieActif() {
+			msg := messageTexte(i18n.T("mealie.inactif"))
+			return &msg, "", true, false, nil, nil
+		}
+		// Période à venir : par défaut demain (les bornes de periode() sont plafonnées à « maintenant »)
+		demain := time.Date(maintenant.Year(), maintenant.Month(), maintenant.Day()+1, 0, 0, 0, 0, time.Local)
+		debut, ok := parserDateIA(e.Debut)
+		if !ok {
+			debut = demain
+		}
+		fin, ok := parserDateIA(e.Fin)
+		if !ok || !fin.After(debut) {
+			fin = debut.Add(24 * time.Hour)
+		}
+		if fin.Sub(debut) > 7*24*time.Hour {
+			fin = debut.Add(7 * 24 * time.Hour)
+		}
+		svc, ok := ha.Lookup("briefing")
+		sb, ok2 := svc.(*ha.ServiceBriefing)
+		if !ok || !ok2 {
+			return nil, "", false, false, nil, nil
+		}
+		data, resume, err = sb.DonneesRepas(debut, fin, e.Ingredients)
+
+	case "cuisiner":
+		if !ha.MealieActif() {
+			msg := messageTexte(i18n.T("mealie.inactif"))
+			return &msg, "", true, false, nil, nil
+		}
+		if strings.TrimSpace(e.Ingredients) == "" {
+			return nil, "", false, false, nil, []string{i18n.T("gemini.rejet.enquete.ingredients")}
+		}
+		if !ha.MealieAPIConfiguree() {
+			msg := messageTexte(i18n.T("cuisiner.non.configure"))
+			return &msg, "", true, false, nil, nil
+		}
+		data, resume, err = ha.RechercherRecettes(e.Ingredients)
+		avis = false
+
+	case "aide":
+		data, resume = a.donneesAide()
+		avis = false
+
+	case "inventaire":
+		if strings.TrimSpace(e.Piece) == "" {
+			return nil, "", false, false, nil, []string{i18n.T("gemini.rejet.enquete.piece")}
+		}
+		data, resume, err = a.haClient.InventairePiece(e.Piece)
+		avis = false
+
 	case "pourquoi_automatisation":
 		var auto *ha.Appareil
 		apps := entites()
@@ -231,4 +341,249 @@ func (a *Analyseur) executerEnqueteGemini(session, texte string, rep *gemini.Rep
 	}
 	msg := messageTexte(texteFinal)
 	return &msg, "", true, false, premier, nil
+}
+
+// ---- Notification sur le téléphone ----
+
+// serviceNotification retourne le service notify.* à utiliser : NOTIFY_SERVICE, sinon
+// l'application mobile HA détectée (la première par ordre alphabétique s'il y en a plusieurs).
+func (a *Analyseur) serviceNotification() string {
+	if s := strings.TrimSpace(a.ia.ServiceNotification); s != "" {
+		return s
+	}
+	services := a.haClient.ServicesMobiles()
+	if len(services) == 0 {
+		return ""
+	}
+	if len(services) > 1 {
+		logx.InfoT("notification.plusieurs", strings.Join(services, ", "), services[0])
+	}
+	return services[0]
+}
+
+// executerNotification envoie un texte sur le téléphone de l'utilisateur (application mobile
+// de Home Assistant) — par défaut la dernière réponse de l'assistant. Confirmation orale comme
+// pour un SMS (sauf si `confirme`, déjà obtenue).
+func (a *Analyseur) executerNotification(session, texte string, rep *gemini.Reponse, confirme bool) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
+	e := rep.Enquete
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		message = strings.TrimSpace(a.derniereReponse(session))
+	}
+	if message == "" {
+		msg := messageTexte(i18n.T("notification.rien"))
+		return &msg, "", true, false, nil, nil
+	}
+	e.Message = message // fige le texte : c'est celui qui sera confirmé puis envoyé
+
+	if a.ia.Confirmation && !confirme {
+		a.definirConfirmation(session, confirmationEnAttente{rep: rep, texte: texte})
+		msg := messageTexte(i18n.T("confirmation.demande", i18n.T("confirmation.notification", tronquerTexte(message, 120))))
+		return &msg, "", true, false, nil, nil
+	}
+
+	service := a.serviceNotification()
+	if service == "" {
+		msg := messageTexte(i18n.T("notification.aucun.service"))
+		return &msg, "", true, false, nil, nil
+	}
+	if err := a.haClient.Notifier(service, i18n.T("notification.titre"), message); err != nil {
+		logx.WarnT("gemini.notification.erreur", err)
+		msg := messageTexte(i18n.T("notification.echec"))
+		return &msg, "", true, false, nil, nil
+	}
+	msg := messageTexte(i18n.T("notification.envoyee"))
+	return &msg, "", true, false, nil, nil
+}
+
+// ---- « Que sais-tu faire ? » ----
+
+// donneesAide rassemble ce que l'assistant sait faire avec les appareils de la maison : par type,
+// quelques appareils réels et les verbes utilisables, plus les grandes fonctions. L'IA en tire
+// des exemples de phrases.
+func (a *Analyseur) donneesAide() (map[string]interface{}, string) {
+	capacites := ha.CapacitesIA()
+	noms := map[string][]string{}
+	for _, app := range a.catalogue {
+		if ha.DomaineExcluIA(app.Domain) {
+			continue
+		}
+		if len(noms[app.Domain]) < 3 {
+			noms[app.Domain] = append(noms[app.Domain], nomAppareil(app))
+		}
+	}
+	domaines := make([]string, 0, len(noms))
+	for d := range noms {
+		domaines = append(domaines, d)
+	}
+	sort.Strings(domaines)
+
+	var commandes []map[string]interface{}
+	for _, d := range domaines {
+		verbes := capacites[d].Verbes
+		if len(verbes) == 0 {
+			continue
+		}
+		if len(verbes) > 4 {
+			verbes = verbes[:4]
+		}
+		commandes = append(commandes, map[string]interface{}{"domaine": d, "exemples_d_appareils": noms[d], "verbes": verbes})
+	}
+	var pieces []string
+	for _, p := range a.GetPieces() {
+		pieces = append(pieces, p.Name)
+	}
+	data := map[string]interface{}{
+		"commandes_possibles": commandes,
+		"pieces":              pieces,
+		"fonctions": []string{
+			"météo (maintenant, demain, après-demain, la semaine)", "agenda et repas du jour", "briefing (météo, agenda, menu, alertes, saint du jour)",
+			"minuteurs", "historique et statistiques d'un capteur", "qui a allumé quoi, et pourquoi", "trouver une chute ou un seuil de température",
+			"classer les pièces (la plus humide, la plus chaude)", "diagnostic d'une pièce ou de la maison", "consommation d'énergie",
+			"conseil (arroser, étendre le linge)", "menu de demain", "trouver une recette avec ce que tu as", "annuler la dernière commande", "envoyer une réponse sur le téléphone",
+		},
+	}
+	return data, "Je peux commander tes appareils, te donner la météo, l'agenda, faire le briefing, lire l'historique de tes capteurs et t'expliquer ce qui se passe dans la maison."
+}
+
+// ---- « Pourquoi tu as fait ça ? » ----
+
+func libelleMoteur(m string) string {
+	switch m {
+	case "gemini":
+		return "l'IA"
+	case "classique":
+		return "la compréhension classique (sans IA)"
+	case "appris":
+		return "une phrase déjà comprise par l'IA puis retenue (réutilisée sans elle)"
+	case "confirmation":
+		return "ta réponse à ma demande de confirmation"
+	case "choix":
+		return "ton choix parmi plusieurs propositions"
+	case "annulation":
+		return "ta demande d'annulation"
+	}
+	return m
+}
+
+// executerExplication répond à « pourquoi tu as fait ça ? » en relisant le dernier échange de la
+// session dans le journal des décisions : phrase dite, moteur, type choisi, entités visées,
+// rejets et seconde chance, phrase apprise. L'IA reformule et propose de corriger.
+func (a *Analyseur) executerExplication(session, texte string) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
+	d := a.decisions.derniereDe(session)
+	if d == nil || time.Since(d.Quand) > 30*time.Minute {
+		msg := messageTexte(i18n.T("explication.rien"))
+		return &msg, "", true, false, nil, nil
+	}
+
+	var cibles []map[string]interface{}
+	for _, id := range d.entites {
+		if app := a.trouverAppareil(id); app != nil {
+			cibles = append(cibles, map[string]interface{}{"nom": nomAppareil(*app), "entity_id": id, "type": app.Domain})
+		}
+	}
+	data := map[string]interface{}{
+		"phrase_dite":        d.Phrase,
+		"comprise_par":       libelleMoteur(d.Moteur),
+		"type_de_reponse":    d.Type,
+		"sujet":              d.Sujet,
+		"actions":            d.Actions,
+		"entites_choisies":   cibles,
+		"resultat_annonce":   d.Resultat,
+		"reussi":             d.Reussi,
+		"rejets_corriges":    d.Rejets,
+		"seconde_chance":     d.SecondeChance,
+		"phrase_deja_apprise": d.cleAppris != "",
+		"marque_comme_faux":  d.Faux,
+	}
+	if d.Ombre != nil {
+		data["avis_de_l_autre_moteur"] = d.Ombre
+	}
+
+	repli := i18n.T("explication.repli", d.Phrase, libelleMoteur(d.Moteur), strings.Join(d.Actions, ", "))
+	if len(d.Actions) == 0 {
+		repli = i18n.T("explication.repli.sans", d.Phrase, libelleMoteur(d.Moteur))
+	}
+	repli += " " + i18n.T("explication.corriger")
+
+	if analyse := a.analyserDonneesIA(texte, map[string]interface{}{"avis_demande": false, "sujet": "expliquer", "donnees": data}); analyse != "" {
+		repli = analyse
+	}
+	msg := messageTexte(repli)
+	return &msg, "", true, false, nil, nil
+}
+
+// ---- Planifier un repas dans Mealie ----
+
+// executerPlanification met une recette (ou une recette au hasard) au plan de repas de Mealie.
+func (a *Analyseur) executerPlanification(session string, e *gemini.Enquete) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
+	repondre := func(cle string, args ...interface{}) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
+		msg := messageTexte(i18n.T(cle, args...))
+		return &msg, "", true, false, nil, nil
+	}
+	if !ha.MealieActif() {
+		return repondre("mealie.inactif")
+	}
+
+	// Date : le jour demandé (par défaut, aujourd'hui), à minuit local
+	jour := time.Now()
+	if d, ok := parserDateIA(e.Debut); ok {
+		jour = d
+	}
+	jour = time.Date(jour.Year(), jour.Month(), jour.Day(), 0, 0, 0, 0, time.Local)
+	quand := fmt.Sprintf("%s %s", jourRelatifNlp(jour), strings.TrimSpace(e.Repas))
+	quand = strings.TrimSpace(quand)
+
+	// Recette au hasard (« propose-moi un dîner au hasard »)
+	if strings.TrimSpace(e.Recette) == "" {
+		titre, err := a.haClient.PlanifierAuHasard(jour, e.Repas)
+		if err != nil {
+			logx.WarnT("mealie.planifier.erreur", err)
+			return repondre("mealie.planifier.echec")
+		}
+		if titre == "" {
+			return repondre("mealie.hasard.fait", quand)
+		}
+		return repondre("mealie.hasard.titre", titre, quand)
+	}
+
+	// Recette précise : on la retrouve par son nom
+	trouvees, err := ha.TrouverRecettes(e.Recette)
+	if err != nil {
+		logx.WarnT("mealie.planifier.erreur", err)
+		return repondre("mealie.planifier.echec")
+	}
+	if len(trouvees) == 0 {
+		return repondre("mealie.recette.inconnue", e.Recette)
+	}
+	// Plusieurs recettes proches : on demande laquelle (la première est retenue si son nom colle exactement)
+	exacte := normaliserPourPhrases(trouvees[0].Nom) == normaliserPourPhrases(e.Recette)
+	if len(trouvees) > 1 && !exacte {
+		noms := make([]string, 0, len(trouvees))
+		for _, r := range trouvees {
+			noms = append(noms, r.Nom)
+		}
+		a.definirEcoute(session)
+		return repondre("mealie.recette.choix", strings.Join(noms, ", "))
+	}
+	if err := a.haClient.PlanifierRepas(jour, e.Repas, trouvees[0]); err != nil {
+		logx.WarnT("mealie.planifier.erreur", err)
+		return repondre("mealie.planifier.echec")
+	}
+	return repondre("mealie.planifie", trouvees[0].Nom, quand)
+}
+
+// jourRelatifNlp : « aujourd'hui », « demain », sinon « vendredi 25 septembre ».
+func jourRelatifNlp(t time.Time) string {
+	now := time.Now()
+	minuit := func(x time.Time) time.Time { return time.Date(x.Year(), x.Month(), x.Day(), 0, 0, 0, 0, time.Local) }
+	switch int(math.Round(minuit(t).Sub(minuit(now)).Hours() / 24)) {
+	case 0:
+		return "aujourd'hui"
+	case 1:
+		return "demain"
+	}
+	jours := []string{"dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"}
+	mois := []string{"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"}
+	return fmt.Sprintf("%s %d %s", jours[t.Weekday()], t.Day(), mois[t.Month()-1])
 }

@@ -31,6 +31,7 @@ func New(port int, apiKey string, sender core.SMSSender, analyseur *nlp.Analyseu
 	if analyseur != nil {
 		convSvc := NewConversationService(analyseur)
 		s.register(NewConversationController(convSvc, apiKey))
+		s.register(NewDecisionsController(analyseur, apiKey))
 	}
 	return s
 }

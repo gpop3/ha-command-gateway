@@ -124,6 +124,22 @@ type Config struct {
 	IAConfirmationGroupe    int  // confirmation au-delà de ce nombre d'actions d'un coup (0 = jamais)
 	TarifKWh                float64 // prix du kWh (€) pour estimer un coût ; 0 = pas de coût
 
+	// Journal des décisions, apprentissage, mode ombre
+	DecisionsFile string // JSONL des échanges (vide = mémoire seulement)
+	NLPApprisFile string // base des phrases apprises par l'IA (vide = mémoire seulement)
+	IAOmbre       bool   // mode ombre : l'autre moteur dit ce qu'il aurait fait
+
+	// Notification sur le téléphone et publication dans Home Assistant
+	NotifyService      string // service notify.* de l'application mobile (vide = détection auto)
+	HAPublish          bool   // publier capteurs et événements dans HA
+	HAPublishIntervalS int    // republication des capteurs (secondes)
+	HAEventName        string // type de l'événement publié à chaque commande
+	HAPublishPhrase    bool   // inclure la phrase dite dans l'événement
+
+	// Recherche de recettes par ingrédients (API de Mealie)
+	MealieURL   string // ex. http://maison.local:9925
+	MealieToken string // jeton d'API Mealie (profil utilisateur)
+
 	// Briefing à la demande
 	BriefingCalendrierRepas string // mot-clé des calendriers de repas (défaut : mealie ; vide = pas de section repas)
 }
@@ -244,6 +260,18 @@ func Load() *Config {
 		GeminiAnalyse:           getEnv("GEMINI_ANALYSE", "true") == "true",
 		IAConfirmationGroupe:    getEnvInt("IA_CONFIRMATION_GROUPE", 5),
 		TarifKWh:                getEnvFloat("TARIF_KWH", 0),
+
+		DecisionsFile: getEnv("DECISIONS_FILE", "data/decisions.jsonl"),
+		NLPApprisFile: getEnv("NLP_APPRIS_FILE", "data/nlp_appris.json"),
+		IAOmbre:       getEnv("IA_OMBRE", "false") == "true",
+
+		NotifyService:      getEnv("NOTIFY_SERVICE", ""),
+		HAPublish:          getEnv("HA_PUBLISH", "true") == "true",
+		HAPublishIntervalS: getEnvInt("HA_PUBLISH_INTERVAL_S", 60),
+		HAEventName:        getEnv("HA_EVENT_NAME", "ha_command_gateway_command"),
+		HAPublishPhrase:    getEnv("HA_PUBLISH_PHRASE", "true") == "true",
+		MealieURL:          getEnv("MEALIE_URL", ""),
+		MealieToken:        getEnv("MEALIE_TOKEN", ""),
 		BriefingCalendrierRepas: getEnv("BRIEFING_CALENDRIER_REPAS", "mealie"),
 	}
 

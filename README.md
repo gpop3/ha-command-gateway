@@ -476,6 +476,45 @@ autorisée) avant toute exécution.
 - L'historique de HA est purgé au bout de `purge_keep_days` (10 jours par défaut) : au-delà, rien à lire.
 - Les entités de présence (`person`, `device_tracker`) restent interdites à l'IA.
 
+### Journal des décisions, mode ombre, apprentissage, visibilité dans HA
+
+- **Journal des décisions** : chaque échange est consigné — phrase (numéros masqués), canal, **moteur** (`gemini`,
+  `classique`, `appris`, `confirmation`, `choix`), **type choisi par l'IA**, actions, motifs de rejet, seconde chance,
+  résultat, **appels IA, tokens et durée**. `GET /decisions?n=50&faux=1` (accès local, clé API) et, si
+  `DECISIONS_FILE` est défini, un fichier JSONL (une ligne par échange, dossier `data/` monté en volume).
+- **« Non, pas ça »** : dit dans les 3 minutes, marque le dernier échange comme **faux** (visible dans le journal,
+  filtre `faux=1`) et fait oublier la phrase apprise le cas échéant. `POST /decisions/faux?id=N` fait de même.
+- **Mode ombre** (`IA_OMBRE=true`) : le NLP classique et l'IA analysent chacun la phrase, mais un seul exécute ;
+  l'autre dit seulement ce qu'il aurait choisi. Les **désaccords** sont journalisés (warn + champ `ombre` du
+  journal) : ils montrent où régler le scoring et où le prompt se trompe. Quand c'est le NLP classique qui
+  exécute, l'IA ombre coûte des appels.
+- **Base apprise** (`NLP_APPRIS_FILE`) : une commande comprise par l'IA et **entièrement réussie** (lumières, prises,
+  volets, ventilateurs, thermostats, lecteurs média… — jamais un script, un SMS, une automatisation ni un texte libre)
+  est mémorisée. Quand l'IA n'est pas disponible (quota, panne, désactivée), la même phrase est comprise sans elle.
+  Une phrase signalée fausse est oubliée.
+- **Visibilité dans Home Assistant** (`HA_PUBLISH=true`) : capteurs `sensor.assistant_statut`,
+  `sensor.assistant_tokens_jour`, `binary_sensor.assistant_ia_suspendue`, `sensor.assistant_derniere_erreur_ia`
+  (republiés toutes les 60 s) et un **événement** `ha_command_gateway_command` à chaque commande (canal, moteur,
+  type, actions, résultat, durée, tokens, et la phrase si `HA_PUBLISH_PHRASE=true`), utilisable comme déclencheur
+  d'automatisation ou dans un tableau de bord. Ces états sont créés par l'API REST : ils ne sont pas des entités
+  de l'interface et disparaissent au redémarrage de HA jusqu'à la prochaine publication.
+- **« Envoie-moi ça sur mon téléphone »** : notification de l'application mobile HA (`NOTIFY_SERVICE`, sinon
+  détection de `notify.mobile_app_*`), par défaut avec la dernière réponse, **avec confirmation orale comme pour
+  un SMS**.
+- **Trouver une recette avec ce que tu as** : « j'ai du riz et des œufs, qu'est-ce que je peux cuisiner ? ». Le code
+  cherche dans **toutes** les recettes de Mealie (pas seulement le plan de repas), classe d'abord celles où « tout y
+  est », puis celles qui utilisent le plus de tes ingrédients avec le moins de manquants (sel, poivre, eau et huile
+  sont supposés disponibles), et l'IA propose 1 à 3 recettes en disant ce qui manque. La correspondance se fait par
+  **mots entiers** (« riz » ne trouve pas « chorizo »). Nécessite l'API de Mealie : `MEALIE_URL` et `MEALIE_TOKEN`
+  (jeton d'API du profil utilisateur) ; les recettes et leurs ingrédients sont lus une fois puis gardés 12 h.
+  *(à vérifier : noms de champs de l'API Mealie)*.
+- **Menu de demain** : « qu'est-ce que je prépare demain soir ? » —
+  le plan de repas Mealie et le détail des recettes (ingrédients, étapes : décongeler, mariner…) *(à vérifier :
+  services `mealie.get_mealplan` / `get_recipe`, sinon titres des calendriers)*, comparés aux ingrédients dits. Le
+  briefing du soir mentionne le menu de demain et ce qui demande de l'avance.
+- **« Que sais-tu faire ? »** (exemples tirés de tes appareils) et **« que puis-je contrôler dans le salon ? »**
+  (inventaire d'une pièce d'après le registre des zones).
+
 ### Enquêtes, annulation, supervision
 
 Le type `enquete` regroupe ce qui demande au code de **rassembler des faits** avant que l'IA les explique
@@ -495,10 +534,12 @@ Le type `enquete` regroupe ce qui demande au code de **rassembler des faits** av
   `device_class: energy` (kWh, Wh), remises à zéro comprises ; coût estimé si `TARIF_KWH` est renseigné.
 - **Conseil** (« faut-il arroser ? », « je peux étendre le linge ? ») : météo (actuelle, 3 jours, pluie des
   12 prochaines heures) + mesures demandées, puis décision motivée de l'IA.
-- **Annuler** (« annule ça », « remets comme avant ») : l'état d'avant chaque commande est mémorisé (15 min,
-  5 commandes par session). Lumières, prises, ventilateurs, volets, thermostats, lecteurs média et
-  automatisations sont restaurés ; **un SMS, un script ou une automatisation exécutés ne sont pas annulables**
-  (l'assistant le dit).
+- **Annuler** (« annule ça », « annule l'action », « remets comme avant ») : l'état d'avant chaque commande — de l'IA
+  **comme du NLP classique** — est mémorisé (15 min, 5 commandes par session). La demande est reconnue **directement par
+  le code**, sans passer par l'IA (qui pouvait répondre « c'est annulé » sans rien faire). Lumières, prises,
+  ventilateurs, volets (ouverts/fermés en grand par `open_cover` / `close_cover`, sinon repositionnés), thermostats,
+  lecteurs média et automatisations sont restaurés ; **un SMS, un script ou une automatisation exécutés ne sont pas
+  annulables** (l'assistant le dit).
 - **Actions groupées** : au-delà de `IA_CONFIRMATION_GROUPE` actions d'un coup (5 par défaut), une confirmation
   orale est demandée (« exécuter "éteins" sur 12 appareils… »).
 
@@ -508,6 +549,20 @@ Le type `enquete` regroupe ce qui demande au code de **rassembler des faits** av
   STT figés…). Le `Dockerfile` l'utilise comme `HEALTHCHECK` : `docker ps` affiche « healthy » / « unhealthy ».
 - `GET /status` (avec `Authorization: Bearer <API_KEY>` si définie) : version, état du WebSocket HA, taille du
   catalogue, sessions IA, disjoncteur Gemini (ouvert ? reprise dans N s), appels et tokens du jour, dernière erreur.
+
+### Expliquer, planifier les repas, bilan de la semaine
+
+- **« Pourquoi tu as fait ça ? »** : l'assistant relit le dernier échange de la session dans le journal des décisions
+  (phrase dite, moteur qui l'a comprise — IA, NLP classique, phrase apprise —, entités choisies, rejets et seconde
+  chance) et l'explique, en proposant de corriger (« non, pas ça, puis redis-moi ce que tu voulais »).
+- **Planifier un repas dans Mealie** : « mets les pâtes au pesto vendredi soir » (recette retrouvée par son nom, le plus
+  proche gagne ; en cas de doute l'assistant liste les candidates) ou « propose-moi un dîner au hasard »
+  (`mealie.set_mealplan` / `mealie.set_random_mealplan` de Home Assistant *(à vérifier sur ta version)*). Il n'existe
+  pas de service HA pour retirer un repas du plan. Nécessite `MEALIE_URL` + `MEALIE_TOKEN`.
+- **Bilan de la semaine** (« fais-moi le bilan de la semaine ») : consommation d'énergie, capteurs les plus chauds /
+  froids / humides avec leur heure, automatisations les plus déclenchées, ouvertures les plus fréquentes, anomalies
+  actuelles ; l'IA en fait un récit. 14 jours au maximum (et l'historique HA est purgé au bout de `purge_keep_days`).
+- **Mealie est désactivé tant que `MEALIE_URL` est vide** : aucun appel (menu du briefing, plan de repas, recettes).
 
 ### Types de réponse
 

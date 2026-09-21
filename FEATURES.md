@@ -45,6 +45,7 @@ Légende : **[base]** = présent dans le projet d'origine · **[IA]** = ajouté 
 | **Micro ouvert après une question** | IA | Quand l'assistant attend une réponse (question de l'IA, confirmation, choix), la voix reste à l'écoute et HA garde le micro ouvert (`continue_conversation`) |
 | **Retour parlé naturel** | IA | « J'ai éteint Salon et Cuisine. », « Volet salon réglé à 50 pour cent. », échecs partiels signalés — formulé par le code, seulement **après** exécution |
 | **Réponse ⇄ SMS/API sans `%!(MISSING)`** | IA | Les `%` du texte libre de l'IA sont échappés |
+| **Notification sur le téléphone** | IA | « envoie-moi ça sur mon téléphone » : notification de l'app mobile HA (`NOTIFY_SERVICE`, sinon détection `notify.mobile_app_*`), dernière réponse par défaut, **avec confirmation orale comme un SMS** |
 
 ---
 
@@ -144,6 +145,18 @@ Désactivable : `GEMINI_ANALYSE=false`.
   tokens et l'usage du jour ; la clé API passe dans un header (jamais dans l'URL/logs).
 - **Entités hors catalogue** validées directement auprès de HA ; le domaine est lu dans l'`entity_id`.
 
+### 4.5 Journal des décisions, mode ombre, apprentissage [IA]
+
+- **Journal des décisions** : chaque échange consigné (phrase avec numéros masqués, canal, moteur, type choisi par
+  l'IA, actions, rejets, seconde chance, résultat, appels IA, tokens, durée). `GET /decisions?n=50&faux=1`
+  et fichier JSONL (`DECISIONS_FILE`).
+- **« Non, pas ça »** : marque le dernier échange (moins de 3 min) comme **faux**, fait oublier la phrase apprise ;
+  `POST /decisions/faux?id=N` équivalent.
+- **Mode ombre** (`IA_OMBRE`) : l'autre moteur (classique ⇄ IA) dit ce qu'il aurait choisi sans exécuter ; les
+  désaccords sont journalisés — repère les erreurs de scoring et de prompt.
+- **Base apprise** (`NLP_APPRIS_FILE`) : une commande d'état simple comprise par l'IA et entièrement réussie est
+  mémorisée ; réutilisée quand l'IA n'est pas disponible. Jamais de script, SMS, automatisation ni texte libre.
+
 ---
 
 ## 5. Commander la maison avec l'IA
@@ -157,9 +170,11 @@ Désactivable : `GEMINI_ANALYSE=false`.
 - **Minuteurs** [IA] : sur un **Echo** (Alexa Media Player ≥ 3.4.0, commande vocale « mets un minuteur de… ») ou
   via les helpers `timer` de HA (avec annonce vocale à la fin).
 - **Automatisations** [IA] : exécuter, activer, désactiver — **jamais** basculer, recharger ni modifier.
-- **Annulation** [IA] : « annule ça » / « remets comme avant » — état d'avant mémorisé (15 min, 5 commandes par
-  session) pour lumières, prises, ventilateurs, volets, thermostats, lecteurs média, automatisations.
-  Un **SMS, un script ou une automatisation exécutés ne sont pas annulables** (l'assistant le dit).
+- **Annulation** [IA] : « annule ça » / « annule l'action » / « remets comme avant » — état d'avant mémorisé (15 min,
+  5 commandes par session) pour les commandes de l'IA **et du NLP classique** ; la demande est reconnue **directement
+  par le code** (sans passer par l'IA). Lumières, prises, ventilateurs, volets (open/close_cover ou position),
+  thermostats, lecteurs média, automatisations. Un **SMS, un script ou une automatisation exécutés ne sont pas
+  annulables** (l'assistant le dit).
 - **Confirmation orale** [IA] avant un SMS, une action sur une automatisation ou une **grosse action groupée**
   (5 actions ou plus par défaut). Réponse « oui / non » interprétée par le code, 30 s.
 - **Questions de l'IA** [IA] : elle peut demander une information manquante (« quel message ? ») ; la réponse est
@@ -175,6 +190,8 @@ Désactivable : `GEMINI_ANALYSE=false`.
 | **Agenda** | IA | période passée ou future libre, tous les calendriers ou un seul (ex. **Mealie** pour les repas / recettes) |
 | **Heure, date, résumé de la maison** | base | |
 | **Briefing à la demande** | IA | météo du jour, agenda (hors calendriers de repas), **repas du jour (Mealie)**, alertes (portes/fenêtres ouvertes, batteries < 15 %), formulé à l'oral par l'IA avec le **saint du jour** (connu de l'IA, aucun calendrier embarqué). **Ne démarre jamais à heure fixe.** Sans IA, le code assemble un briefing sans saint du jour |
+| **Menu de demain et ingrédients** | IA | « qu'est-ce que je prépare demain soir ? » : plan de repas Mealie + détail des recettes (ingrédients, étapes à anticiper) *(à vérifier)*, repli sur les calendriers de repas ; le briefing du soir l'inclut |
+| **Trouver une recette avec ce que tu as** | IA | « j'ai du riz et des œufs, qu'est-ce que je peux cuisiner ? » : recherche dans **toutes** les recettes de Mealie (API directe : `MEALIE_URL` + `MEALIE_TOKEN`), classement « tout y est » puis moins de manquants, correspondance par mots entiers, sel/poivre/eau/huile supposés disponibles ; l'IA propose 1 à 3 recettes et dit ce qui manque *(à vérifier : champs de l'API Mealie)* |
 | **Saint du jour** | IA | simple question à l'IA (« c'est quel saint aujourd'hui / demain ? ») |
 | **Question sur un état actuel** | IA | répondue à partir du contexte (« depuis quand la porte est ouverte ? ») |
 
@@ -216,7 +233,15 @@ Type `enquete` : le code rassemble les faits, l'IA les explique. [IA]
 | `resume` | « que s'est-il passé cette nuit ? » | journal global filtré (portes, lumières, volets, automatisations, scripts) ; mouvements comptés |
 | `energie` | « combien j'ai consommé aujourd'hui ? » | voir §7 |
 | `conseil` | « faut-il arroser aujourd'hui ? », « je peux étendre le linge ? » | météo (actuelle, 3 jours, pluie des 12 h) + mesures demandées ; décision motivée |
-| `annuler` | « annule ça » | voir §5 |
+| `annuler` | « annule ça », « annule l'action » | voir §5 |
+| `expliquer` | « pourquoi tu as fait ça ? » | dernier échange du **journal des décisions** (phrase dite, moteur, entités choisies, rejets, phrase apprise) ; l'IA l'explique et propose de corriger |
+| `planifier` | « mets les pâtes au pesto vendredi soir », « propose-moi un dîner au hasard » | écrit dans le plan de repas Mealie (`set_mealplan` / `set_random_mealplan`, *à vérifier*) ; recette retrouvée par son nom, choix demandé si plusieurs |
+| `bilan` | « fais-moi le bilan de la semaine » | énergie, extrêmes de température et d'humidité, automatisations les plus déclenchées, ouvertures fréquentes, anomalies actuelles |
+| `notifier` | « envoie-moi ça sur mon téléphone » | notification mobile avec confirmation (voir §1) |
+| `repas` | « qu'est-ce que je prépare demain soir ? » | voir §6 |
+| `cuisiner` | « j'ai du riz et des œufs, je cuisine quoi ? » | voir §6 |
+| `aide` | « que sais-tu faire ? » | types d'appareils réels + verbes + grandes fonctions ; l'IA en tire des exemples de phrases |
+| `inventaire` | « que puis-je contrôler dans le salon ? » | appareils contrôlables de la pièce (registre des zones), par type, avec leurs verbes |
 
 ---
 
@@ -246,6 +271,10 @@ Type `enquete` : le code rassemble les faits, l'IA les explique. [IA]
 - **`GET /health`** [IA] : sonde de **vie** — la boucle de traitement (bus) répond-elle ? 200 ou 503.
   Branchée en `HEALTHCHECK` Docker. *Docker ne redémarre pas seul un conteneur « unhealthy » : prévoir `autoheal`
   ou un watchdog.*
+- **Visibilité dans HA** [IA] : capteurs `sensor.assistant_statut`, `sensor.assistant_tokens_jour`,
+  `binary_sensor.assistant_ia_suspendue`, `sensor.assistant_derniere_erreur_ia` (republiés toutes les 60 s) et un
+  **événement** `ha_command_gateway_command` à chaque commande — pour des automatisations et un tableau de bord.
+- **`GET /decisions`** [IA] : journal des décisions (voir §4.5), accès local + clé API.
 - **`GET /status`** [IA] : version, WebSocket HA, taille du catalogue, sessions IA, disjoncteur Gemini (ouvert ?
   reprise dans N s), appels et tokens du jour, dernière erreur, services actifs.
 - **Reconnexion WebSocket HA** automatique [base] avec cache d'états temps réel.
@@ -298,6 +327,11 @@ Voir `.env.example` et le `README.md` pour la liste complète. Réglages ajouté
 | `IA_NUMEROS_AUTORISES` | *(WHITELIST)* | numéros que l'IA peut viser |
 | `BRIEFING_CALENDRIER_REPAS` | `mealie` | mot-clé des calendriers de repas |
 | `TARIF_KWH` | `0` | prix du kWh pour estimer un coût |
+| `IA_OMBRE` | `false` | mode ombre (désaccords NLP ⇄ IA journalisés) |
+| `DECISIONS_FILE` / `NLP_APPRIS_FILE` | `data/…` | journal JSONL des décisions / phrases apprises (volume `./data`) |
+| `MEALIE_URL` / `MEALIE_TOKEN` | *(vide = **tous les appels à Mealie désactivés**)* | interrupteur Mealie (menu du briefing, plan de repas, recettes) ; le jeton sert à chercher / planifier une recette par son nom |
+| `NOTIFY_SERVICE` | *(auto)* | service `notify.*` de l'application mobile |
+| `HA_PUBLISH` / `HA_PUBLISH_INTERVAL_S` / `HA_EVENT_NAME` / `HA_PUBLISH_PHRASE` | `true` / `60` / `ha_command_gateway_command` / `true` | publication de capteurs et d'événements dans HA |
 
 ---
 
@@ -312,14 +346,13 @@ Voir `.env.example` et le `README.md` pour la liste complète. Réglages ajouté
 - Un script est reconnu comme « SMS » d'après son **nom** (contient « sms »).
 - Un service dont le retour commence par « ⚠️ » est compté comme un échec.
 - Les entités de présence (`person`, `device_tracker`) restent interdites à l'IA.
-- L'annulation ne couvre pas les actions faites par le NLP classique, ni les scripts / SMS / automatisations.
+- L'annulation ne couvre pas les scripts / SMS / automatisations exécutés.
 - Le prompt compte 8 types de réponse : à surveiller si le modèle se trompe de type.
 - Pièces, journal (noms d'utilisateurs) et traces d'automatisations demandent un **token administrateur**.
 
 **Idées proposées et non réalisées**
 
 - Tests unitaires (durées de minuteur, numéros, oui/non, recherche de source Spotify, chutes et seuils…).
-- Log de debug des entrées brutes du journal.
 - Mode « à blanc » (`DRY_RUN`), permissions par canal, mémos persistants (seuils personnalisés), routines nommées.
 - Découpage des longues réponses par phrases pour démarrer la voix plus tôt.
 - Génération d'automatisation en brouillon (YAML relu à la main).

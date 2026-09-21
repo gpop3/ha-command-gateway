@@ -36,6 +36,14 @@ type ConfigIA struct {
 	// verbe invalide...), la rappeler une fois en lui expliquant l'erreur.
 	SecondeChance bool
 
+	// Ombre : mode ombre — l'autre moteur (classique ⇄ IA) dit ce qu'il aurait fait, sans
+	// exécuter ; les désaccords sont journalisés. L'IA ombre coûte des tokens.
+	Ombre bool
+
+	// ServiceNotification : service notify.* de l'application mobile (ex. mobile_app_pixel_8).
+	// Vide = détection automatique.
+	ServiceNotification string
+
 	// SeuilGroupe : au-delà de ce nombre d'actions d'un coup (« éteins tout »), demander
 	// une confirmation orale. 0 = jamais.
 	SeuilGroupe int

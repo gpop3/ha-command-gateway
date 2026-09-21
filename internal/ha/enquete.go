@@ -735,3 +735,200 @@ func firstNonNil(vals ...interface{}) interface{} {
 	return ""
 }
 
+
+// ---- Inventaire d'une pièce (« que puis-je contrôler dans le salon ? ») ----
+
+var libellesDomaines = map[string]string{
+	"light": "lumières", "switch": "prises et interrupteurs", "cover": "volets et ouvrants", "fan": "ventilateurs",
+	"climate": "thermostats", "media_player": "lecteurs multimédia", "vacuum": "aspirateurs",
+	"input_boolean": "interrupteurs virtuels", "scene": "scènes",
+}
+
+// InventairePiece liste, par type, ce qu'on peut contrôler dans une pièce (entités rattachées
+// dans HA) avec les verbes utilisables, pour que l'IA donne des exemples de phrases.
+func (c *Client) InventairePiece(piece string) (map[string]interface{}, string, error) {
+	etats, err := c.etatsBruts()
+	if err != nil {
+		return nil, "", err
+	}
+	zones := c.ZonesEntites()
+	pieceNorm := text.Normaliser(strings.TrimSpace(piece))
+	capacites := CapacitesIA()
+
+	noms := map[string][]string{}
+	for _, e := range etats {
+		d := domaineDepuisEntityID(e.EntityID)
+		if _, ok := libellesDomaines[d]; !ok || domainesExclus[d] {
+			continue
+		}
+		if pieceNorm == "" || !strings.Contains(text.Normaliser(zones[e.EntityID]), pieceNorm) {
+			continue
+		}
+		if e.State == "unavailable" {
+			continue
+		}
+		noms[d] = append(noms[d], nomEtat(e))
+	}
+
+	data := map[string]interface{}{"piece": piece}
+	if len(noms) == 0 {
+		data["remarque"] = "aucun appareil contrôlable n'est rattaché à cette pièce dans Home Assistant (ou le registre des pièces est inaccessible)"
+		return data, fmt.Sprintf("Je ne trouve aucun appareil contrôlable dans %s.", piece), nil
+	}
+	domaines := make([]string, 0, len(noms))
+	for d := range noms {
+		domaines = append(domaines, d)
+	}
+	sort.Strings(domaines)
+
+	var groupes []map[string]interface{}
+	var resume []string
+	for _, d := range domaines {
+		liste := noms[d]
+		sort.Strings(liste)
+		if len(liste) > 8 {
+			liste = liste[:8]
+		}
+		verbes := capacites[d].Verbes
+		if len(verbes) > 5 {
+			verbes = verbes[:5]
+		}
+		groupes = append(groupes, map[string]interface{}{"type": libellesDomaines[d], "appareils": liste, "verbes": verbes})
+		resume = append(resume, fmt.Sprintf("%s : %s", libellesDomaines[d], strings.Join(liste, ", ")))
+	}
+	data["appareils"] = groupes
+	return data, fmt.Sprintf("Dans %s, tu peux contrôler — %s.", piece, strings.Join(resume, " ; ")), nil
+}
+
+// ---- Bilan de la semaine ----
+
+// extremesClasse : le capteur le plus haut et le plus bas d'une classe (température,
+// humidité…) sur la période, avec le moment où chaque extrême a été atteint.
+func (c *Client) extremesClasse(classe string, debut, fin time.Time) map[string]interface{} {
+	capteurs := c.capteursParClasse(classe, "")
+	if len(capteurs) == 0 {
+		return nil
+	}
+	if len(capteurs) > maxCapteursClassement {
+		capteurs = capteurs[:maxCapteursClassement]
+	}
+	ids := make([]string, 0, len(capteurs))
+	for _, cp := range capteurs {
+		ids = append(ids, cp.EntityID)
+	}
+	segs, err := c.recupererSegmentsMulti(ids, debut, fin)
+	if err != nil {
+		return nil
+	}
+	type ext struct {
+		nom, piece, unite string
+		v                 float64
+		t                 time.Time
+	}
+	var haut, bas *ext
+	for _, cp := range capteurs {
+		st, ok := statsNumeriques(segs[cp.EntityID])
+		if !ok {
+			continue
+		}
+		if haut == nil || st.Max > haut.v {
+			haut = &ext{nom: cp.Nom, piece: cp.Piece, unite: cp.Unite, v: st.Max, t: st.TMax}
+		}
+		if bas == nil || st.Min < bas.v {
+			bas = &ext{nom: cp.Nom, piece: cp.Piece, unite: cp.Unite, v: st.Min, t: st.TMin}
+		}
+	}
+	if haut == nil {
+		return nil
+	}
+	decrire := func(e *ext) map[string]interface{} {
+		return map[string]interface{}{"capteur": e.nom, "piece": e.piece, "valeur": formaterValeur(e.v, e.unite), "quand": jourRelatif(e.t) + " à " + heureCourte(e.t)}
+	}
+	return map[string]interface{}{"le_plus_haut": decrire(haut), "le_plus_bas": decrire(bas)}
+}
+
+func topCompteurs(m map[string]int, n int) []map[string]interface{} {
+	type kv struct {
+		k string
+		v int
+	}
+	var l []kv
+	for k, v := range m {
+		l = append(l, kv{k, v})
+	}
+	sort.Slice(l, func(i, j int) bool {
+		if l[i].v != l[j].v {
+			return l[i].v > l[j].v
+		}
+		return l[i].k < l[j].k
+	})
+	if len(l) > n {
+		l = l[:n]
+	}
+	var out []map[string]interface{}
+	for _, x := range l {
+		out = append(out, map[string]interface{}{"nom": x.k, "fois": x.v})
+	}
+	return out
+}
+
+// BilanSemaine synthétise une période (une semaine par défaut) : consommation d'énergie,
+// extrêmes de température et d'humidité, automatisations les plus déclenchées, ouvertures les
+// plus fréquentes, et anomalies actuelles. Chaque source indisponible est simplement omise.
+func (c *Client) BilanSemaine(debut, fin time.Time) (map[string]interface{}, string, error) {
+	data := map[string]interface{}{"periode": decrirePeriode(debut, fin)}
+	var morceaux []string
+
+	if conso, resume, err := c.Consommation(debut, fin, ""); err == nil {
+		if l, ok := conso["compteurs"]; ok {
+			data["energie"] = l
+			morceaux = append(morceaux, resume)
+		}
+	}
+	for _, classe := range []string{"temperature", "humidity"} {
+		if ext := c.extremesClasse(classe, debut, fin); ext != nil {
+			data["extremes_"+classe] = ext
+			morceaux = append(morceaux, fmt.Sprintf("%s : %v", nomMesure(classe), ext))
+		}
+	}
+
+	if brut, err := c.journalGlobal(debut, fin); err == nil {
+		etats, _ := c.etatsBruts()
+		classes := map[string]string{}
+		for _, e := range etats {
+			classes[e.EntityID] = chaine(e.Attributes, "device_class")
+		}
+		auto, ouvertures := map[string]int{}, map[string]int{}
+		for _, m := range brut {
+			id := champ(m, "entity_id")
+			nom := premierNonVide(champ(m, "name"), id)
+			switch domaineDepuisEntityID(id) {
+			case "automation":
+				auto[nom]++
+			case "binary_sensor":
+				switch classes[id] {
+				case "door", "window", "opening", "garage_door":
+					if strings.EqualFold(champ(m, "state"), "on") {
+						ouvertures[nom]++
+					}
+				}
+			}
+		}
+		if len(auto) > 0 {
+			data["automatisations_les_plus_declenchees"] = topCompteurs(auto, 5)
+		}
+		if len(ouvertures) > 0 {
+			data["ouvertures_les_plus_frequentes"] = topCompteurs(ouvertures, 4)
+		}
+	}
+
+	if diag, _, err := c.DiagnosticMaison(); err == nil {
+		if _, rien := diag["remarque"]; !rien {
+			data["anomalies_actuelles"] = diag
+		}
+	}
+	if len(data) <= 1 {
+		return data, "Je n'ai rien pu rassembler pour ce bilan.", nil
+	}
+	return data, "Voici le bilan : " + strings.Join(morceaux, ". ") + ".", nil
+}

@@ -95,10 +95,17 @@ func (c *Client) Restaurer(e EtatSauve) error {
 		return appel("turn_on", data)
 
 	case "cover":
-		if pos, ok := nombreAttr(e.Attributs["current_position"]); ok {
+		// Fermé / ouvert en grand : open_cover / close_cover (tous les volets ne savent pas se
+		// positionner) ; position intermédiaire : set_cover_position.
+		pos, aPos := nombreAttr(e.Attributs["current_position"])
+		switch {
+		case e.Etat == "closed" || (aPos && pos <= 0):
+			return appel("close_cover", nil)
+		case (e.Etat == "open" && !aPos) || (aPos && pos >= 100):
+			return appel("open_cover", nil)
+		case aPos:
 			return appel("set_cover_position", map[string]interface{}{"position": int(pos)})
-		}
-		if e.Etat == "open" || e.Etat == "opening" {
+		case e.Etat == "opening":
 			return appel("open_cover", nil)
 		}
 		return appel("close_cover", nil)

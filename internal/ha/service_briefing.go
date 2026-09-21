@@ -96,6 +96,10 @@ type BriefingSections struct {
 	Agenda  string `json:"agenda,omitempty"`
 	Repas   string `json:"repas,omitempty"`
 	Alertes string `json:"alertes,omitempty"`
+	// Le soir : le menu de demain et, si Mealie le permet, le détail des recettes (étapes qui
+	// demandent de l'avance : décongeler, mariner...).
+	Demain        string      `json:"demain,omitempty"`
+	DemainDetails interface{} `json:"demain_details,omitempty"`
 }
 
 // Sections lit les données du briefing à l'instant donné.
@@ -107,7 +111,7 @@ func (s *ServiceBriefing) Sections(now time.Time) BriefingSections {
 	case now.Hour() >= 12:
 		moment = "après-midi"
 	}
-	return BriefingSections{
+	sec := BriefingSections{
 		Moment:  moment,
 		Date:    libelleJour(now),
 		Meteo:   s.meteo(),
@@ -115,6 +119,76 @@ func (s *ServiceBriefing) Sections(now time.Time) BriefingSections {
 		Repas:   s.repas(now),
 		Alertes: s.alertes(),
 	}
+	if now.Hour() >= 17 && MealieActif() && motRepasBriefing != "" {
+		debut, fin := debutFinJour(now.AddDate(0, 0, 1))
+		lignes, plan, _ := s.menu(debut, fin, true)
+		if len(lignes) > 0 {
+			sec.Demain = i18n.T("briefing.demain", strings.Join(lignes, " ; "))
+			if len(plan) > 0 {
+				sec.DemainDetails = plan
+			}
+		}
+	}
+	return sec
+}
+
+// menu retourne le menu d'une période : lignes « dîner : Poulet rôti » et, quand Mealie
+// répond, le plan détaillé (recettes). Repli : calendriers de repas (titres seulement).
+func (s *ServiceBriefing) menu(debut, fin time.Time, details bool) (lignes []string, plan []map[string]interface{}, source string) {
+	if p, err := s.client.PlanRepas(debut, fin.Add(-time.Second), details); err == nil && len(p) > 0 {
+		for _, m := range p {
+			titre, _ := m["titre"].(string)
+			repas, _ := m["repas"].(string)
+			if titre != "" {
+				lignes = append(lignes, i18n.T("briefing.repas.ligne", repas, titre))
+			}
+		}
+		if len(lignes) > 0 {
+			return lignes, p, "plan de repas Mealie"
+		}
+	}
+	sa := s.serviceAgenda()
+	if sa == nil || s.analyseur == nil || motRepasBriefing == "" {
+		return nil, nil, ""
+	}
+	for _, app := range s.analyseur.GetCatalogue() {
+		if app.Domain != "calendar" || !estCalendrierRepas(app) {
+			continue
+		}
+		var noms []string
+		for _, e := range sa.evenementsCalendrier(app, debut, fin) {
+			if t := strings.TrimSpace(e.Summary); t != "" {
+				noms = append(noms, t)
+			}
+		}
+		if len(noms) > 0 {
+			lignes = append(lignes, i18n.T("briefing.repas.ligne", libelleRepas(app.FriendlyNameExact), strings.Join(noms, ", ")))
+		}
+	}
+	return lignes, nil, "calendriers de repas"
+}
+
+// DonneesRepas prépare la réponse à « qu'est-ce que je prépare demain soir ? » : le menu
+// de la période, le détail des recettes (ingrédients, étapes) quand Mealie le permet, et les
+// ingrédients que l'utilisateur dit avoir. L'IA compare et signale ce qui demande de l'avance.
+func (s *ServiceBriefing) DonneesRepas(debut, fin time.Time, ingredients string) (map[string]interface{}, string, error) {
+	data := map[string]interface{}{"periode": decrirePeriode(debut, fin)}
+	if ing := strings.TrimSpace(ingredients); ing != "" {
+		data["ingredients_disponibles"] = ing
+	}
+	lignes, plan, source := s.menu(debut, fin, true)
+	if len(lignes) == 0 {
+		data["remarque"] = "aucun repas planifié sur cette période (ou Mealie inaccessible)"
+		return data, "Aucun repas planifié.", nil
+	}
+	data["source"] = source
+	if len(plan) > 0 {
+		data["repas"] = plan
+	} else {
+		data["repas"] = lignes
+		data["remarque"] = "seuls les titres sont disponibles : pas de détail des recettes (ingrédients, étapes)"
+	}
+	return data, i18n.T("briefing.repas", strings.Join(lignes, " ; ")), nil
 }
 
 // construire assemble le briefing sans l'IA (repli) : salutation, date, puis les sections.
@@ -125,7 +199,7 @@ func (s *ServiceBriefing) construire(now time.Time) string {
 		salut = "briefing.bonsoir"
 	}
 	parts := []string{i18n.T(salut, sec.Date)}
-	for _, p := range []string{sec.Meteo, sec.Agenda, sec.Repas, sec.Alertes} {
+	for _, p := range []string{sec.Meteo, sec.Agenda, sec.Repas, sec.Demain, sec.Alertes} {
 		if strings.TrimSpace(p) != "" {
 			parts = append(parts, p)
 		}
@@ -185,7 +259,7 @@ func (s *ServiceBriefing) serviceAgenda() *ServiceAgenda {
 // estCalendrierRepas : le calendrier est-il un calendrier de repas (nom contenant le mot-clé) ?
 func estCalendrierRepas(app Appareil) bool {
 	mot := text.Normaliser(motRepasBriefing)
-	return mot != "" && strings.Contains(text.Normaliser(app.EntityID+" "+app.FriendlyNameExact), mot)
+	return MealieActif() && mot != "" && strings.Contains(text.Normaliser(app.EntityID+" "+app.FriendlyNameExact), mot)
 }
 
 func debutFinJour(now time.Time) (time.Time, time.Time) {
@@ -261,7 +335,7 @@ func libelleRepas(nom string) string {
 // repas : le menu du jour, lu dans les calendriers de repas (Mealie).
 func (s *ServiceBriefing) repas(now time.Time) string {
 	sa := s.serviceAgenda()
-	if sa == nil || s.analyseur == nil || motRepasBriefing == "" {
+	if !MealieActif() || sa == nil || s.analyseur == nil || motRepasBriefing == "" {
 		return ""
 	}
 	debut, fin := debutFinJour(now)

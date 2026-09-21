@@ -44,6 +44,12 @@ type Analyseur struct {
 	confirmations    map[string]confirmationEnAttente
 	ecoutes          map[string]time.Time
 	annulations      map[string][]groupeAnnulation
+
+	// Journal des décisions, base apprise, actions réussies à apprendre, dernières réponses
+	decisions         *journalDecisions
+	appris            *baseAppris
+	actionsOK         map[string][]gemini.Action
+	dernieresReponses map[string]string
 }
 
 // ConfigDesambiguisation paramètre la proposition de choix multiples lorsque plusieurs entités obtiennent un score très proche.
@@ -101,6 +107,10 @@ func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisa
 		confirmations:      make(map[string]confirmationEnAttente),
 		ecoutes:            make(map[string]time.Time),
 		annulations:        make(map[string][]groupeAnnulation),
+		decisions:          nouveauJournalDecisions(),
+		appris:             nouvelleBaseAppris(),
+		actionsOK:          make(map[string][]gemini.Action),
+		dernieresReponses:  make(map[string]string),
 	}
 }
 
@@ -362,7 +372,89 @@ func (a *Analyseur) GenererSystemPrompt() string {
 
 // AnalyserEtExecuter traite une commande textuelle et retourne la réponse.
 // `session` identifie le canal (« voix », « console » ou numéro SMS (identifiant))
+//
+// Chaque échange est consigné dans le journal des décisions (moteur, type choisi par l'IA,
+// actions, résultat, coût, durée) ; « non, pas ça » juste après marque le dernier échange
+// comme erroné ; une commande comprise par l'IA et entièrement réussie est apprise.
 func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
+	debut := time.Now()
+
+	// « Non, pas ça » : on marque le dernier échange comme erroné (sauf si on attend une réponse)
+	if !a.reponseAttendue(session) && interpreterCorrection(texte) {
+		if msg, ok := a.marquerCorrection(session); ok {
+			return msg, "", true, false, nil
+		}
+	}
+
+	rec := &Decision{Quand: debut, Canal: masquerCanal(session), Phrase: masquerNumeros(texte), Moteur: "classique", session: session}
+	appels0, tokens0 := a.compteursIA()
+
+	msg, verbe, match, isAction, app := a.analyserEtExecuterInterne(session, texte, rec)
+
+	appels1, tokens1 := a.compteursIA()
+	rec.DureeMs = time.Since(debut).Milliseconds()
+	rec.AppelsIA, rec.Tokens = appels1-appels0, tokens1-tokens0
+	rec.Reussi = match && msg != nil
+	rec.Resultat = texteDuMessage(msg)
+	if rec.Moteur == "classique" && app != nil && match {
+		rec.entites = []string{app.EntityID}
+		rec.Actions = []string{strings.TrimSpace(app.EntityID + " " + verbe)}
+	}
+
+	// Apprentissage : commande comprise par l'IA (ou rejouée) et entièrement réussie
+	if acts := a.prendreActionsOK(session); len(acts) > 0 {
+		switch rec.Moteur {
+		case "gemini":
+			a.apprendreDepuisIA(rec, texte, acts)
+		case "appris":
+			a.appris.succes(rec.cleAppris)
+		}
+	}
+
+	// « Envoie-moi ça » enverra cette réponse — sauf si on attend une réponse (question, confirmation)
+	if match && msg != nil && rec.Moteur != "confirmation" && !a.reponseAttendue(session) && !(rec.Type == "enquete" && rec.Sujet == "notifier") {
+		a.definirDerniereReponse(session, texteComplet(msg))
+	}
+
+	a.decisions.ajouter(rec)
+
+	// Mode ombre : l'autre moteur dit ce qu'il aurait fait (sans exécuter)
+	if a.ia.Ombre && rec.Reussi && (rec.Moteur == "gemini" || rec.Moteur == "classique") {
+		go a.executerOmbre(rec.ID, texte, rec.Moteur, rec.Type, rec.entites)
+	}
+	return msg, verbe, match, isAction, app
+}
+
+func (a *Analyseur) compteursIA() (appels, tokens int) {
+	if a.gemini == nil {
+		return 0, 0
+	}
+	return a.gemini.Compteurs()
+}
+
+func (a *Analyseur) definirDerniereReponse(session, texte string) {
+	a.muSessions.Lock()
+	a.dernieresReponses[session] = texte
+	a.muSessions.Unlock()
+}
+
+func (a *Analyseur) derniereReponse(session string) string {
+	a.muSessions.Lock()
+	defer a.muSessions.Unlock()
+	return a.dernieresReponses[session]
+}
+
+// rejouerConfirmation exécute ce qui attendait un « oui » : une notification, ou des actions.
+func (a *Analyseur) rejouerConfirmation(session string, conf confirmationEnAttente) (*types.Message, string, bool, bool, *ha.Appareil) {
+	if conf.rep.Type == "enquete" {
+		msg, verbe, match, isAction, app, _ := a.executerNotification(session, conf.texte, conf.rep, true)
+		return msg, verbe, match, isAction, app
+	}
+	msg, verbe, match, isAction, app, _ := a.executerActionsGemini(session, conf.texte, conf.rep, true)
+	return msg, verbe, match, isAction, app
+}
+
+func (a *Analyseur) analyserEtExecuterInterne(session, texte string, rec *Decision) (*types.Message, string, bool, bool, *ha.Appareil) {
 	nettoye := strings.ToLower(texte)
 
 	// Confirmation en attente (action sensible proposée par l'IA)
@@ -370,9 +462,10 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 		a.effacerConfirmation(session)
 		switch interpreterConfirmation(nettoye) {
 		case reponseOui:
-			msg, verbe, match, isAction, app, _ := a.executerActionsGemini(session, conf.texte, conf.rep, true)
-			return msg, verbe, match, isAction, app
+			rec.Moteur = "confirmation"
+			return a.rejouerConfirmation(session, conf)
 		case reponseNon:
+			rec.Moteur = "confirmation"
 			msg := messageTexte(i18n.T("confirmation.annule"))
 			return &msg, "", true, false, nil
 		}
@@ -383,16 +476,41 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 	if att, ok := a.attentePour(session); ok {
 		if idx, ok := interpreterChoix(nettoye, len(att.candidats)); ok {
 			a.effacerAttente(session)
+			rec.Moteur = "choix"
 			choisi := att.candidats[idx]
 			logx.DebugT("nlp.desambiguisation.choix", choisi.FriendlyName)
-			return a.executerMatch(choisi, att.texte)
+			return a.executerMatch(session, choisi, att.texte)
 		}
 		a.effacerAttente(session)
 	}
 
+	// « Annule ça » : détecté directement (sans passer par l'IA, qui répond parfois « c'est
+	// annulé » sans rien faire) dès qu'une commande récente peut être annulée.
+	if interpreterAnnulation(nettoye) && a.aUneAnnulation(session) {
+		rec.Moteur, rec.Type, rec.Sujet = "annulation", "enquete", "annuler"
+		msg, verbe, match, isAction, app, _ := a.executerAnnulation(session)
+		return msg, verbe, match, isAction, app
+	}
+
 	if a.gemini != nil && a.geminiPrimary {
-		if msg, verbe, match, isAction, app := a.tenterGemini(session, texte); match {
+		if msg, verbe, match, isAction, app := a.tenterGemini(session, texte, rec); match {
 			return msg, verbe, match, isAction, app
+		}
+	}
+
+	// Phrase déjà comprise par l'IA (et réussie) : rejouée sans elle
+	if cle := clePhrase(texte); cle != "" {
+		if e := a.appris.chercher(cle); e != nil {
+			rec.Moteur, rec.cleAppris = "appris", cle
+			rep := &gemini.Reponse{Type: "action", Actions: e.Actions}
+			msg, verbe, match, isAction, app, _ := a.executerActionsGemini(session, texte, rep, false)
+			if match {
+				for _, act := range e.Actions {
+					rec.Actions = append(rec.Actions, strings.TrimSpace(act.EntityID+" "+act.Verbe))
+				}
+				return msg, verbe, match, isAction, app
+			}
+			rec.Moteur, rec.cleAppris = "classique", ""
 		}
 	}
 
@@ -410,7 +528,7 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 	classement := a.classerAppareils(nettoye, domainesCandidats)
 	if len(classement) == 0 || classement[0].Score < a.score.Minimal {
 		if a.gemini != nil && !a.geminiPrimary {
-			if msg, verbe2, match, isAction, app := a.tenterGemini(session, texte); match {
+			if msg, verbe2, match, isAction, app := a.tenterGemini(session, texte, rec); match {
 				return msg, verbe2, match, isAction, app
 			}
 		}
@@ -430,11 +548,11 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 		}
 	}
 
-	return a.executerMatch(classement[0].Appareil, nettoye)
+	return a.executerMatch(session, classement[0].Appareil, nettoye)
 }
 
 // executerMatch applique le verbe (action) ou lit l'état de l'entité choisie
-func (a *Analyseur) executerMatch(app ha.Appareil, texteNettoye string) (*types.Message, string, bool, bool, *ha.Appareil) {
+func (a *Analyseur) executerMatch(session string, app ha.Appareil, texteNettoye string) (*types.Message, string, bool, bool, *ha.Appareil) {
 	verbe, estAction := "", false
 	if v, ok := domaineAUnVerbe(texteNettoye, app.Domain); ok {
 		verbe, estAction = v, true
@@ -458,7 +576,17 @@ func (a *Analyseur) executerMatch(app ha.Appareil, texteNettoye string) (*types.
 		if !ok {
 			return nil, verbe, true, estAction, &app
 		}
-		etat := a.executerActionMessage(svc, app, verbe, params)
+		snap, _ := a.haClient.SauvegarderEtat(app) // état d'avant, pour « annule ça »
+		etat, reussi := a.executerActionMessageOK(svc, app, verbe, params)
+		if reussi {
+			g := groupeAnnulation{quand: time.Now()}
+			if snap != nil {
+				g.etats = []ha.EtatSauve{*snap}
+			} else {
+				g.nonAnnulables = []string{nomAppareil(app)}
+			}
+			a.empilerAnnulation(session, g)
+		}
 		return &etat, verbe, true, estAction && !estActionParDefaut, &app
 	}
 
@@ -807,6 +935,12 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 
 // executerActionMessage Execute la commande sur l'entité et récupère le message
 func (a *Analyseur) executerActionMessage(svc ha.Service, app ha.Appareil, verbe string, params map[string]interface{}) types.Message {
+	msg, _ := a.executerActionMessageOK(svc, app, verbe, params)
+	return msg
+}
+
+// executerActionMessageOK : comme executerActionMessage, et dit si la commande a réussi.
+func (a *Analyseur) executerActionMessageOK(svc ha.Service, app ha.Appareil, verbe string, params map[string]interface{}) (types.Message, bool) {
 	reponse, err := svc.ExecuterCommande(app, verbe, params)
 
 	if err != nil {
@@ -819,7 +953,7 @@ func (a *Analyseur) executerActionMessage(svc ha.Service, app ha.Appareil, verbe
 				Texte:  i18n.T("erreur.action.parler"),
 				Params: []interface{}{},
 			},
-		}
+		}, false
 	}
 
 	return types.Message{
@@ -831,7 +965,7 @@ func (a *Analyseur) executerActionMessage(svc ha.Service, app ha.Appareil, verbe
 			Texte:  reponse,
 			Params: []interface{}{},
 		},
-	}
+	}, true
 }
 
 // ---- Lecture d'état ----
@@ -941,26 +1075,15 @@ func (a *Analyseur) trouverAppareil(entityID string) *ha.Appareil {
 //
 // Si le code rejette la réponse (entité inconnue, verbe invalide...), Gemini a une
 // seconde chance : on lui renvoie les motifs précis du rejet pour qu'il se corrige.
-func (a *Analyseur) tenterGemini(session, texte string) (*types.Message, string, bool, bool, *ha.Appareil) {
-	_ = a.RafraichirCatalogue()
-
-	// Contexte réduit aux entités pertinentes (désactivable : GEMINI_PRESELECTION=false)
-	var retenus map[string]bool
-	if a.ia.Preselection && a.ia.ContexteMax > 0 {
-		retenus = a.preselectionIA(texte)
-	}
-	contexte, err := a.haClient.ContexteJSON(a.GetPieces(), retenus)
+func (a *Analyseur) tenterGemini(session, texte string, rec *Decision) (*types.Message, string, bool, bool, *ha.Appareil) {
+	contexte, capacites, err := a.contexteIA(texte)
 	if err != nil {
 		logx.WarnT("gemini.contexte.erreur", err)
 		return nil, "", false, false, nil
 	}
-	capacites, err := json.Marshal(ha.CapacitesIA())
-	if err != nil {
-		return nil, "", false, false, nil
-	}
 
 	historique := a.historiquePour(session)
-	rep, err := a.gemini.Interroger(historique, texte, contexte, string(capacites))
+	rep, err := a.gemini.Interroger(historique, texte, contexte, capacites)
 	if err != nil {
 		a.journaliserErreurIA(err)
 		return nil, "", false, false, nil
@@ -972,18 +1095,33 @@ func (a *Analyseur) tenterGemini(session, texte string) (*types.Message, string,
 	if !match && len(rejets) > 0 && a.ia.SecondeChance {
 		motifs := strings.Join(rejets, " ; ")
 		logx.InfoT("gemini.seconde.chance", motifs)
+		rec.SecondeChance = true
 		brut, _ := json.Marshal(rep)
 		hist2 := append(append([]gemini.Tour(nil), historique...), gemini.Tour{Demande: texte, Reponse: string(brut)})
-		rep2, err2 := a.gemini.Reinterroger(hist2, i18n.T("gemini.correction", motifs), contexte, string(capacites))
+		rep2, err2 := a.gemini.Reinterroger(hist2, i18n.T("gemini.correction", motifs), contexte, capacites)
 		if err2 != nil {
 			a.journaliserErreurIA(err2)
 		} else {
 			rep = rep2
-			msg, verbe, match, isAction, app, _ = a.traiterReponseGemini(session, texte, rep)
+			msg, verbe, match, isAction, app, rejets = a.traiterReponseGemini(session, texte, rep)
 		}
 	}
 
 	a.memoriser(session, texte, rep)
+	rec.Rejets = rejets
+	rec.Type = rep.Type
+	if rep.Enquete != nil {
+		rec.Sujet = rep.Enquete.Sujet
+	}
+	for _, act := range rep.Actions {
+		rec.Actions = append(rec.Actions, strings.TrimSpace(act.EntityID+" "+act.Verbe))
+		if rep.Type == "action" {
+			rec.entites = append(rec.entites, act.EntityID)
+		}
+	}
+	if match {
+		rec.Moteur = "gemini"
+	}
 	return msg, verbe, match, isAction, app
 }
 
@@ -1308,6 +1446,13 @@ func (a *Analyseur) executerActionsGemini(session, texte string, rep *gemini.Rep
 	case len(succes) == 0:
 		msg := messageTexte(i18n.T("retour.echec", listeNoms(echecs)))
 		return &msg, "", true, false, premier, nil
+	}
+
+	// Toutes les actions ont réussi : la commande pourra être apprise (cf. appris.go)
+	if len(echecs) == 0 && nonExecutees == 0 && len(succes) == len(actions) {
+		if acts := actionsApprenables(actions, prepares); acts != nil {
+			a.definirActionsOK(session, acts)
+		}
 	}
 
 	texteFinal := phraseSucces(succes)

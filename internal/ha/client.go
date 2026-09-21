@@ -140,7 +140,7 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("%s", i18n.T("erreur.ha.reponse.post", resp.StatusCode, path))
 	}
 	return body, nil
