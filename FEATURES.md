@@ -64,6 +64,10 @@ Légende : **[base]** = présent dans le projet d'origine · **[IA]** = ajouté 
 - **Grammaire Vosk et prompt Whisper générés** [base] à partir des verbes, mots et noms d'entités.
 - **Météo « après-demain », jours de la semaine, « dans 3 jours »** [IA] : correction du libellé et nouveaux horizons.
 - **Mots-clés tolérants aux fautes de transcription** [IA] : « annoce » reconnu comme « annonce ».
+- **« Et dans la chambre ? »** [IA] : la commande précédente (moins de 3 min) est reprise quand la phrase suivante ne
+  contient qu'un lieu ; la pièce est remplacée.
+- **« Tu voulais dire… ? »** [IA] : quand rien n'est compris, l'appareil (et le verbe) le plus proche est proposé — jusqu'à
+  trois, l'un après l'autre (« oui » exécute, « non » passe au suivant) ; jamais pour serrures, alarmes, caméras.
 
 ---
 
@@ -141,6 +145,8 @@ Désactivable : `GEMINI_ANALYSE=false`.
 - **Quotas locaux** (requêtes/min, requêtes/jour, tokens/min) et **anti-rafale**.
 - **Disjoncteur** : après un `429` (durée conseillée par l'API) ou 3 échecs consécutifs, l'IA est suspendue et le
   NLP classique prend le relais, sans spam de logs.
+- **Message d'état** : quand l'IA est suspendue (disjoncteur, quota), l'assistant le dit **une fois** (« je passe en
+  mode simplifié ») puis annonce son retour.
 - **Debug** : `GEMINI_DEBUG=true` (ou `LOG_LEVEL=debug`) journalise le prompt, le contexte, la réponse brute, les
   tokens et l'usage du jour ; la clé API passe dans un header (jamais dans l'URL/logs).
 - **Entités hors catalogue** validées directement auprès de HA ; le domaine est lu dans l'`entity_id`.
@@ -257,6 +263,8 @@ Type `enquete` : le code rassemble les faits, l'IA les explique. [IA]
   automatisation, ou action groupée. `IA_CONFIRMATION=false` la désactive.
 - **Paramètres validés** : nom de paramètre de script inconnu rejeté, champ obligatoire manquant → question.
 - **Format d'`entity_id` contrôlé** avant tout appel HA ; le domaine est déduit de l'identifiant.
+- **« Oublie tout »** : efface journal (et archives), phrases apprises et mémoires de conversation, **toujours après
+  confirmation orale** (irréversible).
 - **Étanchéité des sessions** : mémoire, confirmations, annulations et attentes propres à chaque canal.
 - **Accès HTTP** : `/conversation`, `/sms/send`, `/health`, `/status` réservés à `127.0.0.1` ; clé API
   (`Authorization: Bearer`) si définie.
@@ -328,6 +336,7 @@ Voir `.env.example` et le `README.md` pour la liste complète. Réglages ajouté
 | `BRIEFING_CALENDRIER_REPAS` | `mealie` | mot-clé des calendriers de repas |
 | `TARIF_KWH` | `0` | prix du kWh pour estimer un coût |
 | `IA_OMBRE` | `false` | mode ombre (désaccords NLP ⇄ IA journalisés) |
+| `DECISIONS_MAX_MO` / `DECISIONS_ANCIENS` | `5` / `3` | rotation du journal des décisions (taille max, archives gardées) |
 | `DECISIONS_FILE` / `NLP_APPRIS_FILE` | `data/…` | journal JSONL des décisions / phrases apprises (volume `./data`) |
 | `MEALIE_URL` / `MEALIE_TOKEN` | *(vide = **tous les appels à Mealie désactivés**)* | interrupteur Mealie (menu du briefing, plan de repas, recettes) ; le jeton sert à chercher / planifier une recette par son nom |
 | `NOTIFY_SERVICE` | *(auto)* | service `notify.*` de l'application mobile |

@@ -66,6 +66,8 @@ type journalDecisions struct {
 	derniere    map[string]*Decision
 	surDecision func(Decision)
 	erreurFait  bool
+	maxOctets   int64 // taille au-delà de laquelle le fichier tourne (0 = jamais)
+	garder      int   // nombre d'anciennes versions conservées (.1, .2…)
 }
 
 func nouveauJournalDecisions() *journalDecisions {
@@ -85,9 +87,28 @@ func masquerCanal(session string) string {
 	return session
 }
 
+// tourner archive le fichier courant : .N est supprimé, .(N-1) devient .N… puis le fichier
+// courant devient .1 (à appeler verrou pris).
+func (j *journalDecisions) tourner() {
+	if j.garder < 1 {
+		_ = os.Remove(j.fichier)
+		return
+	}
+	_ = os.Remove(fmt.Sprintf("%s.%d", j.fichier, j.garder))
+	for i := j.garder - 1; i >= 1; i-- {
+		_ = os.Rename(fmt.Sprintf("%s.%d", j.fichier, i), fmt.Sprintf("%s.%d", j.fichier, i+1))
+	}
+	_ = os.Rename(j.fichier, j.fichier+".1")
+}
+
 func (j *journalDecisions) ecrire(v interface{}) {
 	if j.fichier == "" {
 		return
+	}
+	if j.maxOctets > 0 {
+		if st, err := os.Stat(j.fichier); err == nil && st.Size() >= j.maxOctets {
+			j.tourner()
+		}
 	}
 	brut, err := json.Marshal(v)
 	if err == nil {
@@ -201,6 +222,14 @@ func (j *journalDecisions) liste(n int, fauxSeul bool) []Decision {
 func (a *Analyseur) DefinirJournalDecisions(chemin string) {
 	a.decisions.mu.Lock()
 	a.decisions.fichier = chemin
+	a.decisions.mu.Unlock()
+}
+
+// DefinirRotationDecisions limite la taille du fichier : au-delà de maxOctets il est archivé
+// (decisions.jsonl.1, .2…), en gardant `garder` anciennes versions. maxOctets <= 0 : pas de rotation.
+func (a *Analyseur) DefinirRotationDecisions(maxOctets int64, garder int) {
+	a.decisions.mu.Lock()
+	a.decisions.maxOctets, a.decisions.garder = maxOctets, garder
 	a.decisions.mu.Unlock()
 }
 

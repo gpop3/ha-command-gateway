@@ -56,6 +56,7 @@ func main() {
 
 	// Journal des décisions et phrases apprises par l'IA (réutilisées sans elle)
 	analyseur.DefinirJournalDecisions(cfg.DecisionsFile)
+	analyseur.DefinirRotationDecisions(int64(cfg.DecisionsMaxMo)*1024*1024, cfg.DecisionsAnciens)
 	if err := analyseur.DefinirFichierAppris(cfg.NLPApprisFile); err != nil {
 		logx.WarnT("appris.fichier.erreur", err)
 	}

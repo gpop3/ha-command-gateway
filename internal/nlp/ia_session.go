@@ -198,6 +198,9 @@ func (a *Analyseur) reponseAttendue(session string) bool {
 	if t, ok := a.ecoutes[session]; ok && now.Before(t) {
 		return true
 	}
+	if s, ok := a.suggestions[session]; ok && now.Before(s.expire) {
+		return true
+	}
 	return false
 }
 

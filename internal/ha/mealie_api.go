@@ -414,11 +414,11 @@ func (c *Client) PlanifierAuHasard(date time.Time, typeRepas string) (string, er
 	if entry == "" {
 		return "", fmt.Errorf("intégration Mealie de Home Assistant introuvable")
 	}
-	type_ := typeRepasMealie(typeRepas)
+	typeMealie := typeRepasMealie(typeRepas)
 	if _, err := c.post("/api/services/mealie/set_random_mealplan", map[string]interface{}{
 		"config_entry_id": entry,
 		"date":            date.Format("2006-01-02"),
-		"entry_type":      type_,
+		"entry_type":      typeMealie,
 	}); err != nil {
 		return "", err
 	}
@@ -427,7 +427,7 @@ func (c *Client) PlanifierAuHasard(date time.Time, typeRepas string) (string, er
 		return "", nil // planifié, mais on ne sait pas quoi
 	}
 	for i := len(plan) - 1; i >= 0; i-- { // le dernier ajouté du bon type
-		if fmt.Sprint(plan[i]["repas"]) == libelleTypeRepas(type_) {
+		if fmt.Sprint(plan[i]["repas"]) == libelleTypeRepas(typeMealie) {
 			return fmt.Sprint(plan[i]["titre"]), nil
 		}
 	}

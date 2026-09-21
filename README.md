@@ -564,6 +564,22 @@ Le type `enquete` regroupe ce qui demande au code de **rassembler des faits** av
   actuelles ; l'IA en fait un récit. 14 jours au maximum (et l'historique HA est purgé au bout de `purge_keep_days`).
 - **Mealie est désactivé tant que `MEALIE_URL` est vide** : aucun appel (menu du briefing, plan de repas, recettes).
 
+### Sans IA : suites de phrase, « tu voulais dire ? », état de l'IA, données
+
+- **« Et dans la chambre ? »** : le NLP classique reprend la commande précédente (moins de 3 min) quand la phrase
+  suivante ne contient qu'un lieu — « allume la lumière du salon » puis « et dans la chambre ? » devient « allume la
+  lumière de la chambre » (la pièce est remplacée, ou ajoutée si la commande n'en avait pas). Une phrase qui contient
+  autre chose que le lieu (« température chambre ») n'est jamais réécrite.
+- **« Tu voulais dire… ? »** : quand ni l'IA ni le NLP ne comprennent, l'assistant propose l'appareil (et le verbe) le
+  plus proche — jusqu'à trois, l'un après l'autre : « oui » l'exécute, « non » passe au suivant. Jamais pour les
+  serrures, alarmes et caméras ; la voix reste à l'écoute pendant la proposition.
+- **Message quand l'IA est suspendue** : quand le disjoncteur s'ouvre (ou le quota local est atteint), l'assistant le dit
+  **une fois** — « je passe en mode simplifié » — devant sa prochaine réponse, puis annonce le retour de l'IA.
+- **Rotation du journal des décisions** : au-delà de `DECISIONS_MAX_MO` (5 Mo) le fichier est archivé
+  (`decisions.jsonl.1`, `.2`, `.3` : `DECISIONS_ANCIENS`). Les phrases apprises sont limitées à 500 entrées.
+- **« Oublie tout »** (aussi « efface ta mémoire ») : efface le journal (et ses archives), les phrases apprises et les
+  mémoires de conversation, **après confirmation** (irréversible, toujours demandée).
+
 ### Types de réponse
 
 - **`speak`** : réponse parlée (état lu dans le contexte, discussion).

@@ -143,7 +143,7 @@ func (c *Client) detailRecette(entryID, recetteID string) map[string]interface{}
 // demandé, le détail des 4 premières recettes. Erreur si l'intégration est absente.
 func (c *Client) PlanRepas(debut, fin time.Time, avecDetails bool) ([]map[string]interface{}, error) {
 	if !MealieActif() {
-		return nil, fmt.Errorf("Mealie désactivé (MEALIE_URL vide)")
+		return nil, fmt.Errorf("mealie désactivé (MEALIE_URL vide)")
 	}
 	entry := c.mealieEntryID()
 	if entry == "" {

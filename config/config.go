@@ -126,6 +126,8 @@ type Config struct {
 
 	// Journal des décisions, apprentissage, mode ombre
 	DecisionsFile string // JSONL des échanges (vide = mémoire seulement)
+	DecisionsMaxMo   int // taille maximale du journal en Mo avant rotation (0 = jamais)
+	DecisionsAnciens int // nombre d'anciennes versions conservées
 	NLPApprisFile string // base des phrases apprises par l'IA (vide = mémoire seulement)
 	IAOmbre       bool   // mode ombre : l'autre moteur dit ce qu'il aurait fait
 
@@ -262,6 +264,8 @@ func Load() *Config {
 		TarifKWh:                getEnvFloat("TARIF_KWH", 0),
 
 		DecisionsFile: getEnv("DECISIONS_FILE", "data/decisions.jsonl"),
+		DecisionsMaxMo:   getEnvInt("DECISIONS_MAX_MO", 5),
+		DecisionsAnciens: getEnvInt("DECISIONS_ANCIENS", 3),
 		NLPApprisFile: getEnv("NLP_APPRIS_FILE", "data/nlp_appris.json"),
 		IAOmbre:       getEnv("IA_OMBRE", "false") == "true",
 

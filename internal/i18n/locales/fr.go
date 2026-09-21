@@ -639,6 +639,16 @@ func init() {
 		"mealie.recette.choix":     "Plusieurs recettes correspondent : %s. Laquelle ?",
 		"mealie.planifier.echec":   "Je n'ai pas pu écrire dans le plan de repas de Mealie.",
 		"mealie.planifier.erreur":  "⚠️ Planification Mealie impossible : %v",
+		"ia.suspendue":         "Je passe en mode simplifié : l'IA est indisponible un moment, je comprends moins bien les phrases libres.",
+		"ia.quota":             "J'ai atteint la limite d'appels à l'IA : je passe en mode simplifié.",
+		"ia.retour":            "L'IA est de nouveau disponible.",
+		"nlp.suite.classique":  "↪️ Suite de phrase : « %s » comprise comme « %s »",
+		"suggestion.demande":   "Je n'ai pas compris. Tu voulais dire : %s ?",
+		"suggestion.autre":     "Alors : %s ?",
+		"suggestion.abandon":   "D'accord, laisse tomber.",
+		"suggestion.etat":      "l'état de %s",
+		"confirmation.oubli":   "effacer le journal des échanges, ce que j'ai appris et nos conversations",
+		"oubli.fait":           "C'est fait : j'ai tout oublié.",
 		"gemini.debug.reponse":     "🤖 Gemini ← %s\n(tokens : prompt=%d, sortie=%d, total=%d)",
 
 		// ---- Agenda (période explicite) ----
