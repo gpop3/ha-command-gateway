@@ -420,7 +420,7 @@ func (a *Analyseur) AnalyserEtExecuter(session, texte string) (*types.Message, s
 	}
 
 	// « Envoie-moi ça » enverra cette réponse — sauf si on attend une réponse (question, confirmation)
-	if match && msg != nil && rec.Moteur != "confirmation" && !a.reponseAttendue(session) && !(rec.Type == "enquete" && rec.Sujet == "notifier") {
+	if match && msg != nil && rec.Moteur != "confirmation" && !a.reponseAttendue(session) && (rec.Type != "enquete" || rec.Sujet != "notifier") {
 		a.definirDerniereReponse(session, texteComplet(msg))
 	}
 
