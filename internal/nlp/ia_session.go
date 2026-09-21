@@ -428,3 +428,58 @@ func (a *Analyseur) preselectionIA(texte string) map[string]bool {
 	}
 	return retenus
 }
+
+// placerTexteScript s'assure que le texte à transmettre à un script (annonce sur l'Echo, SMS…)
+// arrive bien dans un de ses paramètres, même si l'IA l'a mis ailleurs, sous un autre nom, ou pas
+// du tout :
+//   - le texte est cherché dans le paramètre « message », le complément de l'IA, puis la phrase
+//     dite (« annonce … ») dont on retire « sur l'echo dot » ;
+//   - script SANS champ déclaré : il reçoit message et message_vocal, comme par la voie classique ;
+//   - script AVEC champs : le texte va dans le champ de type texte le plus adapté, si l'IA n'en a
+//     déjà rempli aucun.
+func (a *Analyseur) placerTexteScript(svc ha.Service, app *ha.Appareil, act gemini.Action, texte string, params map[string]interface{}) {
+	champs := a.haClient.ChampsScript(app.EntityID)
+	vars, _ := params["variables"].(map[string]interface{})
+	if vars == nil {
+		vars = map[string]interface{}{}
+	}
+
+	message, _ := params["message"].(string)
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = strings.TrimSpace(act.Complement)
+	}
+	if message == "" {
+		if m, ok := svc.ExtraireParams(strings.ToLower(texte))["message"].(string); ok {
+			message = ha.NettoyerMessageScript(*app, strings.TrimSpace(m))
+		}
+	}
+
+	if len(champs) == 0 {
+		if message == "" {
+			// Le texte est peut-être dans un paramètre nommé par l'IA (« annonce », « texte »…)
+			noms := make([]string, 0, len(vars))
+			for k := range vars {
+				noms = append(noms, k)
+			}
+			sort.Strings(noms)
+			for _, k := range noms {
+				if s, _ := vars[k].(string); ha.NomDeTexte(k) && strings.TrimSpace(s) != "" {
+					message = strings.TrimSpace(s)
+					break
+				}
+			}
+		}
+		if message != "" {
+			params["message"] = message
+		}
+		return
+	}
+
+	if !contenuFourni(params) && message != "" {
+		if cible := ha.ChampTexte(champs); cible != "" {
+			vars[cible] = message
+			params["variables"] = vars
+		}
+	}
+}

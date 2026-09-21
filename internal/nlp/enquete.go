@@ -34,10 +34,11 @@ func (a *Analyseur) empilerAnnulation(session string, g groupeAnnulation) {
 	if len(g.etats) == 0 && len(g.nonAnnulables) == 0 {
 		return
 	}
+	cle := cleAnnulation(session)
 	a.muSessions.Lock()
 	defer a.muSessions.Unlock()
 	var garde []groupeAnnulation
-	for _, x := range a.annulations[session] {
+	for _, x := range a.annulations[cle] {
 		if time.Since(x.quand) < dureeAnnulation {
 			garde = append(garde, x)
 		}
@@ -46,59 +47,114 @@ func (a *Analyseur) empilerAnnulation(session string, g groupeAnnulation) {
 	if len(garde) > maxGroupesAnnulation {
 		garde = garde[len(garde)-maxGroupesAnnulation:]
 	}
-	a.annulations[session] = garde
+	a.annulations[cle] = garde
+	logx.DebugT("annulation.memorisee", len(g.etats), len(g.nonAnnulables), len(garde))
 }
 
 func (a *Analyseur) depilerAnnulation(session string) (groupeAnnulation, bool) {
+	cle := cleAnnulation(session)
 	a.muSessions.Lock()
 	defer a.muSessions.Unlock()
-	pile := a.annulations[session]
+	pile := a.annulations[cle]
+	logx.DebugT("annulation.demandee", len(pile))
 	for len(pile) > 0 {
 		g := pile[len(pile)-1]
 		pile = pile[:len(pile)-1]
 		if time.Since(g.quand) < dureeAnnulation {
-			a.annulations[session] = pile
+			a.annulations[cle] = pile
 			return g, true
 		}
 	}
-	a.annulations[session] = nil
+	a.annulations[cle] = nil
 	return groupeAnnulation{}, false
-}
-
-// phrasesAnnulation : « annule ça », « annule l'action », « remets comme avant »…
-var phrasesAnnulation = []string{
-	"annule ca", "annule cela", "annule l'action", "annule cette action", "annule la derniere action",
-	"annule la commande", "annule la derniere commande", "annule le dernier ordre", "annule tout ca",
-	"annule ce que tu viens de faire", "annule ce que tu as fait", "remets comme avant", "remets comme c'etait",
-	"remets comme il etait", "remets comme elle etait", "reviens en arriere", "retour en arriere",
-	"defais ca", "fais marche arriere",
 }
 
 func normaliserPourPhrases(s string) string {
 	t := text.Normaliser(s)
-	t = strings.NewReplacer("’", " ", "'", " ", "-", " ", ".", " ", ",", " ", "!", " ", "?", " ", ";", " ", ":", " ").Replace(t)
+	t = strings.NewReplacer("’", " ", "'", " ", "-", " ", ".", " ", ",", " ", "!", " ", "?", " ", ";", " ", ":", " ", "[", " ", "]", " ").Replace(t)
 	return " " + strings.Join(strings.Fields(t), " ") + " "
 }
 
-// interpreterAnnulation reconnaît une demande d'annulation de la dernière commande.
+// motsAnnulationAutorises : les seuls mots qui peuvent accompagner « annule » / « défais » dans
+// une demande d'annulation (« annuler l'action », « annule ça s'il te plaît »…). « unk » : mot
+// inconnu de la grammaire de la reconnaissance vocale ([unk]).
+var motsAnnulationAutorises = map[string]bool{
+	"ca": true, "cela": true, "ce": true, "que": true, "tu": true, "viens": true, "de": true, "faire": true,
+	"as": true, "fait": true, "fais": true, "l": true, "la": true, "le": true, "cette": true, "derniere": true,
+	"dernier": true, "action": true, "commande": true, "ordre": true, "tout": true, "s": true, "il": true,
+	"te": true, "plait": true, "svp": true, "stp": true, "merci": true, "vite": true, "unk": true, "moi": true,
+	"encore": true, "precedente": true, "precedent": true, "actions": true,
+	"je": true, "veux": true, "voudrais": true, "peux": true, "peut": true, "pourrais": true, "pourriez": true,
+}
+
+// motsBloquesAnnulation : ce qui désigne autre chose qu'une commande d'appareil (« annule le
+// minuteur », « annule le rendez-vous »…).
+var motsBloquesAnnulation = map[string]bool{
+	"minuteur": true, "minuterie": true, "timer": true, "alarme": true, "reveil": true, "rappel": true,
+	"sms": true, "message": true, "evenement": true, "reservation": true, "rendez": true, "rdv": true,
+	"abonnement": true, "notification": true,
+}
+
+// interpreterAnnulation reconnaît une demande d'annulation de la dernière commande, sous toutes
+// ses formes courantes : « annule ça », « annuler l'action », « annule la dernière commande »,
+// « défais ça », « remets comme avant », « reviens en arrière ».
 func interpreterAnnulation(texte string) bool {
 	t := normaliserPourPhrases(texte)
-	if len(strings.Fields(t)) > 9 {
+	mots := strings.Fields(t)
+	if len(mots) == 0 || len(mots) > 8 {
 		return false
 	}
-	for _, p := range phrasesAnnulation {
-		if strings.Contains(t, normaliserPourPhrases(p)) {
-			return true
+	for _, m := range mots {
+		if motsBloquesAnnulation[m] {
+			return false
 		}
 	}
-	return false
+
+	// « remets comme avant », « reviens en arrière », « fais marche arrière »
+	for _, p := range []string{" comme avant ", " comme c etait ", " comme il etait ", " comme elle etait ", " en arriere ", " marche arriere "} {
+		if !strings.Contains(t, p) {
+			continue
+		}
+		for _, m := range mots {
+			for _, v := range []string{"remet", "revien", "retour", "fais", "defai", "reprend"} {
+				if strings.HasPrefix(m, v) {
+					return true
+				}
+			}
+		}
+	}
+
+	// « annule … », « défais … » : accompagnés seulement de mots d'appoint
+	declencheur := false
+	for _, m := range mots {
+		switch {
+		case strings.HasPrefix(m, "annul"), strings.HasPrefix(m, "defai"):
+			declencheur = true
+		case motsAnnulationAutorises[m]:
+		default:
+			return false
+		}
+	}
+	return declencheur
+}
+
+// cleAnnulation regroupe les interfaces locales (voix, console, Home Assistant) en une seule pile
+// d'annulation : chaque requête HA Assist a sa propre conversation, et « annule ça » doit défaire
+// la dernière commande même si elle a été donnée par un autre canal local. Un numéro de téléphone
+// (SMS) garde sa pile à lui.
+func cleAnnulation(session string) string {
+	if _, ok := normaliserNumero(session); ok {
+		return session
+	}
+	return "local"
 }
 
 // aUneAnnulation : une commande récente de la session peut-elle être annulée ?
 func (a *Analyseur) aUneAnnulation(session string) bool {
+	cle := cleAnnulation(session)
 	a.muSessions.Lock()
 	defer a.muSessions.Unlock()
-	for _, g := range a.annulations[session] {
+	for _, g := range a.annulations[cle] {
 		if time.Since(g.quand) < dureeAnnulation {
 			return true
 		}
@@ -392,6 +448,7 @@ func (a *Analyseur) executerNotification(session, texte string, rep *gemini.Repo
 		msg := messageTexte(i18n.T("notification.echec"))
 		return &msg, "", true, false, nil, nil
 	}
+	a.empilerAnnulation(session, groupeAnnulation{quand: time.Now(), nonAnnulables: []string{i18n.T("annulation.notification")}})
 	msg := messageTexte(i18n.T("notification.envoyee"))
 	return &msg, "", true, false, nil, nil
 }

@@ -217,6 +217,19 @@ func (a *Analyseur) GetPieces() []ha.Piece {
 
 // ---- Grammaire / Prompt ----
 
+// phrasesSysteme : réponses et commandes de l'assistant lui-même (confirmation, annulation,
+// correction, oubli), ajoutées à la grammaire de la reconnaissance vocale.
+var phrasesSysteme = []string{
+	"oui", "ouais", "non", "ok", "d'accord", "vas-y", "confirme", "annule", "stop",
+	"annule ça", "annule cela", "annule l'action", "annuler l'action", "annule cette action",
+	"annule la dernière action", "annuler la dernière action", "annule la commande",
+	"annule la dernière commande", "annule tout ça", "remets comme avant", "remettre comme avant",
+	"reviens en arrière", "retour en arrière", "défais ça",
+	"non pas ça", "pas ça", "ce n'est pas ça", "c'est faux", "tu t'es trompé",
+	"oublie tout", "efface ta mémoire", "efface tout",
+	"pourquoi tu as fait ça", "comment tu as compris",
+}
+
 // GenererGrammaire génère la grammaire Vosk :
 func (a *Analyseur) GenererGrammaire() string {
 	unique := make(map[string]bool)
@@ -232,6 +245,11 @@ func (a *Analyseur) GenererGrammaire() string {
 
 	for _, mot := range []string{i18n.T("nlp.mot.assistant"), i18n.T("nlp.mot.pourcentage"), i18n.T("nlp.mot.choix")} {
 		ajouter(mot)
+	}
+	// Phrases « système » : sans elles la grammaire ne pourrait jamais reconnaître « oui »,
+	// « non » ou « annule ça » (Vosk ne connaît que les phrases de sa grammaire)
+	for _, phrase := range phrasesSysteme {
+		ajouter(phrase)
 	}
 
 	entitesParDomaine := make(map[string][]ha.Appareil)
@@ -1387,12 +1405,8 @@ func (a *Analyseur) executerActionsGemini(session, texte string, rep *gemini.Rep
 		}
 		if app.Domain == "script" {
 			params["ia"] = true // contrôle des champs obligatoires côté service
-			// Script sans champ déclaré : le texte à transmettre est repris du complément de l'IA
-			if _, ok := params["message"]; !ok && len(a.haClient.ChampsScript(app.EntityID)) == 0 {
-				if c := strings.TrimSpace(act.Complement); c != "" {
-					params["message"] = c
-				}
-			}
+			// Le texte à transmettre (annonce, SMS…) doit arriver dans un paramètre du script
+			a.placerTexteScript(svc, app, act, texte, params)
 			// Un SMS sans message : on le demande au lieu de lancer le script à vide
 			if estScriptSMS(*app) && !contenuFourni(params) {
 				a.definirEcoute(session)

@@ -649,6 +649,9 @@ func init() {
 		"suggestion.etat":      "l'état de %s",
 		"confirmation.oubli":   "effacer le journal des échanges, ce que j'ai appris et nos conversations",
 		"oubli.fait":           "C'est fait : j'ai tout oublié.",
+		"annulation.notification": "la notification",
+		"annulation.memorisee":    "↩️ Annulation possible : %d état(s) et %d élément(s) non annulable(s) mémorisés (%d commande(s) en pile)",
+		"annulation.demandee":     "↩️ Annulation demandée : %d commande(s) en pile",
 		"gemini.debug.reponse":     "🤖 Gemini ← %s\n(tokens : prompt=%d, sortie=%d, total=%d)",
 
 		// ---- Agenda (période explicite) ----

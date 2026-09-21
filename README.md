@@ -501,6 +501,10 @@ autorisée) avant toute exécution.
 - **« Envoie-moi ça sur mon téléphone »** : notification de l'application mobile HA (`NOTIFY_SERVICE`, sinon
   détection de `notify.mobile_app_*`), par défaut avec la dernière réponse, **avec confirmation orale comme pour
   un SMS**.
+- **Texte transmis aux scripts** (annonce sur l'Echo, SMS) : le texte est retrouvé dans le paramètre « message », le
+  complément de l'IA ou la phrase dite (dont on retire « sur l'echo dot »), puis placé dans le bon paramètre : un script
+  **sans champ déclaré** reçoit `message` et `message_vocal` ; un script **avec champs** reçoit le texte dans son champ de
+  type texte (un nom proposé par l'IA proche d'un champ — « message » pour « message_vocal » — est rattaché à ce champ).
 - **Trouver une recette avec ce que tu as** : « j'ai du riz et des œufs, qu'est-ce que je peux cuisiner ? ». Le code
   cherche dans **toutes** les recettes de Mealie (pas seulement le plan de repas), classe d'abord celles où « tout y
   est », puis celles qui utilisent le plus de tes ingrédients avec le moins de manquants (sel, poivre, eau et huile
@@ -534,8 +538,14 @@ Le type `enquete` regroupe ce qui demande au code de **rassembler des faits** av
   `device_class: energy` (kWh, Wh), remises à zéro comprises ; coût estimé si `TARIF_KWH` est renseigné.
 - **Conseil** (« faut-il arroser ? », « je peux étendre le linge ? ») : météo (actuelle, 3 jours, pluie des
   12 prochaines heures) + mesures demandées, puis décision motivée de l'IA.
-- **Annuler** (« annule ça », « annule l'action », « remets comme avant ») : l'état d'avant chaque commande — de l'IA
-  **comme du NLP classique** — est mémorisé (15 min, 5 commandes par session). La demande est reconnue **directement par
+- **Annuler** (« annule ça », « annuler l'action », « défais ça », « remets comme avant », « reviens en arrière » —
+  toutes les formes de « annuler » sont reconnues, et les mots inconnus `[unk]` de la reconnaissance vocale sont
+  tolérés ; « annule le minuteur » n'est pas une annulation de commande). Les interfaces **locales** (voix, console,
+  Home Assistant Assist) partagent une seule pile d'annulation — chaque requête Assist a sa propre conversation —,
+  un numéro de téléphone garde la sienne. Un SMS ou une notification envoyés sont listés comme « non annulables ».
+  Les phrases système (oui, non, annule ça, oublie tout…) sont ajoutées à la **grammaire Vosk**, qui sinon ne pourrait
+  jamais les reconnaître.
+  L'état d'avant chaque commande — de l'IA **comme du NLP classique** — est mémorisé (15 min, 5 commandes). La demande est reconnue **directement par
   le code**, sans passer par l'IA (qui pouvait répondre « c'est annulé » sans rien faire). Lumières, prises,
   ventilateurs, volets (ouverts/fermés en grand par `open_cover` / `close_cover`, sinon repositionnés), thermostats,
   lecteurs média et automatisations sont restaurés ; **un SMS, un script ou une automatisation exécutés ne sont pas

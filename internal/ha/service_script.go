@@ -4,6 +4,7 @@ import (
 	"ha-command-gateway/internal/i18n"
 	"ha-command-gateway/internal/logx"
 	"ha-command-gateway/internal/utils/text"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -66,6 +67,10 @@ func (s *ServiceScript) ExecuterCommande(app Appareil, verbe string, params map[
 
 	// Chemin classique (texte libre « dire ... ») : message / message_vocal
 	if msg, ok := params["message"].(string); ok && msg != "" {
+		if !depuisIA {
+			// Texte dit à voix haute : « annonce sur l'echo dot coucou » → « coucou »
+			msg = NettoyerMessageScript(app, msg)
+		}
 		if _, existe := variables["message"]; !existe {
 			variables["message"] = msg
 		}
@@ -117,6 +122,50 @@ func (s *ServiceScript) MotsReconnus() []string {
 	return []string{
 		"dire", "message", "annonce",
 	}
+}
+
+var reNonAlnumScript = regexp.MustCompile(`[^a-z0-9]+`)
+
+// NettoyerMessageScript retire du début d'un message dit à voix haute les mots qui désignent le
+// script ou l'appareil : « sur l'echo dot le repas est prêt » → « le repas est prêt ». Ne retire rien
+// si le message ne commence pas par un mot du nom du script.
+func NettoyerMessageScript(app Appareil, message string) string {
+	nom := map[string]bool{}
+	for _, m := range strings.Fields(reNonAlnumScript.ReplaceAllString(text.Normaliser(app.FriendlyNameExact+" "+strings.ReplaceAll(app.EntityID, "_", " ")), " ")) {
+		nom[m] = true
+	}
+	liaison := map[string]bool{"sur": true, "le": true, "la": true, "l": true, "les": true, "du": true, "de": true, "dans": true,
+		"a": true, "au": true, "aux": true, "pour": true, "en": true, "un": true, "une": true, "par": true, "via": true, "avec": true}
+
+	mots := strings.Fields(message)
+	fin := 0 // index après le dernier mot « nom » du préfixe
+	for i, mot := range mots {
+		if i == len(mots)-1 {
+			break // on garde toujours au moins un mot
+		}
+		sous := strings.Fields(reNonAlnumScript.ReplaceAllString(text.Normaliser(mot), " "))
+		if len(sous) == 0 {
+			continue
+		}
+		estNom, estLiaison := false, true
+		for _, s := range sous {
+			if nom[s] {
+				estNom = true
+			} else if !liaison[s] {
+				estLiaison = false
+			}
+		}
+		if !estLiaison && !estNom {
+			break
+		}
+		if estNom {
+			fin = i + 1
+		}
+	}
+	if fin == 0 {
+		return message
+	}
+	return strings.Join(mots[fin:], " ")
 }
 
 // estMotCleMessage : « dire », « message », « annonce » — avec une faute de

@@ -2,6 +2,7 @@ package ha
 
 import (
 	"encoding/json"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -187,6 +188,76 @@ func (c *Client) ChampsScript(entityID string) map[string]ChampScript {
 	return c.champsScript(entityID)
 }
 
+// reNomVariable : nom de variable de script acceptable (minuscules, chiffres, « _ »).
+var reNomVariable = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
+
+// NomDeTexte : le nom d'un paramètre évoque-t-il un texte à transmettre (message, annonce…) ?
+func NomDeTexte(nom string) bool {
+	n := strings.ToLower(nom)
+	for _, k := range []string{"message", "msg", "texte", "text", "annonce", "vocal", "phrase", "contenu", "body"} {
+		if strings.Contains(n, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func nomsChampsTries(champs map[string]ChampScript) []string {
+	noms := make([]string, 0, len(champs))
+	for n := range champs {
+		noms = append(noms, n)
+	}
+	sort.Strings(noms)
+	return noms
+}
+
+// ChampTexte retourne le champ d'un script le plus adapté pour recevoir un texte (message,
+// annonce…) : un champ obligatoire de type texte, sinon un champ de type texte, sinon l'unique
+// champ. Chaîne vide si aucun ne convient.
+func ChampTexte(champs map[string]ChampScript) string {
+	noms := nomsChampsTries(champs)
+	for _, n := range noms {
+		if champs[n].Requis && NomDeTexte(n) {
+			return n
+		}
+	}
+	for _, n := range noms {
+		if NomDeTexte(n) {
+			return n
+		}
+	}
+	if len(noms) == 1 {
+		return noms[0]
+	}
+	return ""
+}
+
+// champCible retrouve le champ déclaré d'un script qui correspond à un nom proposé par l'IA
+// (« message » pour un champ « message_vocal »). Le nom exact d'abord, puis un nom qui en contient
+// un autre, puis — pour un texte — le champ de texte ; à défaut l'unique champ du script.
+func champCible(champs map[string]ChampScript, nom string) (string, bool) {
+	if _, ok := champs[nom]; ok {
+		return nom, true
+	}
+	n := strings.ToLower(nom)
+	noms := nomsChampsTries(champs)
+	for _, c := range noms {
+		lc := strings.ToLower(c)
+		if strings.Contains(lc, n) || strings.Contains(n, lc) {
+			return c, true
+		}
+	}
+	if NomDeTexte(n) {
+		if c := ChampTexte(champs); c != "" && NomDeTexte(c) {
+			return c, true
+		}
+	}
+	if len(noms) == 1 {
+		return noms[0], true
+	}
+	return "", false
+}
+
 // ParametresIAValides filtre les paramètres structurés proposés par l'IA : seuls
 // ceux que le domaine sait réellement utiliser sont conservés (les noms de
 // paramètres inventés sont rejetés). Le résultat est fusionné dans les params
@@ -201,9 +272,25 @@ func (c *Client) ParametresIAValides(app Appareil, brut map[string]string) map[s
 	case "script":
 		champs := c.champsScript(app.EntityID)
 		variables := map[string]interface{}{}
-		for nom, val := range brut {
-			if _, ok := champs[nom]; ok {
-				variables[nom] = val
+		noms := make([]string, 0, len(brut))
+		for nom := range brut {
+			noms = append(noms, nom)
+		}
+		sort.Strings(noms)
+		for _, nom := range noms {
+			val := brut[nom]
+			if len(champs) == 0 {
+				// Script sans champ déclaré : rien à valider, on transmet les noms sûrs
+				if reNomVariable.MatchString(nom) {
+					variables[nom] = val
+				}
+				continue
+			}
+			// L'IA se trompe parfois de nom (« message » pour « message_vocal ») : on retrouve le champ
+			if cible, ok := champCible(champs, nom); ok {
+				if _, dejaLa := variables[cible]; !dejaLa {
+					variables[cible] = val
+				}
 			} else {
 				logx.WarnT("gemini.parametre.rejete", nom, app.EntityID)
 			}
