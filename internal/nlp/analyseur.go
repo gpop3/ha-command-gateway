@@ -987,22 +987,29 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 			continue
 		}
 
-		// Fuzzy match : insensible aux accents + tolérance proportionnelle
+		// Fuzzy match : insensible aux accents + tolérance proportionnelle. Réservé aux mots
+		// d'au moins 5 lettres : en dessous, une tolérance d'1 erreur suffit à confondre des mots
+		// courants sans rapport (bug réel : « joue » (jouer) ↔ « jour » dans « jour date », le nom
+		// de l'entité time.date — 1 seule lettre d'écart sur 4 déclenchait le fuzzy match et faisait
+		// gagner time.date sur « joue musique »). Les mots courts restent trouvables par match exact
+		// ou pluriel via motCorrespond, juste pas par tolérance aux fautes.
 		motNorm := text.Normaliser(mot)
-		for _, motHA := range strings.Fields(nomApp) {
-			if len(motHA) < 3 {
-				continue
-			}
-			motHANorm := text.Normaliser(motHA)
-			maxErreurs := len(motNorm) / 4
-			if maxErreurs < 1 {
-				maxErreurs = 1
-			}
-			if text.DistanceLevenshtein(motNorm, motHANorm) <= maxErreurs {
-				score += a.score.BonusFuzzy
-				aMatcheSpecifique = true
-				motsMatches++
-				break
+		if len(motNorm) >= 5 {
+			for _, motHA := range strings.Fields(nomApp) {
+				if len(motHA) < 3 {
+					continue
+				}
+				motHANorm := text.Normaliser(motHA)
+				maxErreurs := len(motNorm) / 4
+				if maxErreurs < 1 {
+					maxErreurs = 1
+				}
+				if text.DistanceLevenshtein(motNorm, motHANorm) <= maxErreurs {
+					score += a.score.BonusFuzzy
+					aMatcheSpecifique = true
+					motsMatches++
+					break
+				}
 			}
 		}
 	}
