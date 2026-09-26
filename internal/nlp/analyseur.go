@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"ha-command-gateway/internal/ha"
 	"ha-command-gateway/internal/logx"
@@ -484,8 +485,17 @@ func (a *Analyseur) rejouerConfirmation(session string, conf confirmationEnAtten
 	if conf.rep.Enquete != nil && conf.rep.Enquete.Sujet == "oublier" {
 		return a.oublierTout(), "", true, false, nil
 	}
-	if conf.rep.Type == "enquete" {
-		msg, verbe, match, isAction, app, _ := a.executerNotification(session, conf.texte, conf.rep, true)
+	if conf.rep.Type == "enquete" && conf.rep.Enquete != nil {
+		var msg *types.Message
+		var verbe string
+		var match, isAction bool
+		var app *ha.Appareil
+		switch conf.rep.Enquete.Sujet {
+		case "creer_evenement":
+			msg, verbe, match, isAction, app, _ = a.executerCreationEvenement(session, conf.texte, conf.rep, true)
+		default:
+			msg, verbe, match, isAction, app, _ = a.executerNotification(session, conf.texte, conf.rep, true)
+		}
 		return msg, verbe, match, isAction, app
 	}
 	msg, verbe, match, isAction, app, _ := a.executerActionsGemini(session, conf.texte, conf.rep, true)
@@ -898,6 +908,41 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, do
 	return classement[0].Appareil, classement[0].Score
 }
 
+// motCorrespond vérifie que `mot` (un mot de la phrase dite) correspond à l'un des MOTS de
+// `hay` (nom convivial ou entity_id d'un appareil), en tolérant le pluriel dans les deux sens
+// (« volet » ↔ « volets »). Contrairement à un simple strings.Contains sur toute la chaîne, un
+// mot ne peut jamais se glisser à l'intérieur d'un autre à travers une frontière de mot — ex.
+// « son » ne doit pas correspondre à « maison » (bug réel : « barre de son » se retrouvait à
+// égalité de score avec des entités météo/résumé sans rapport, à cause de « maison »).
+func motCorrespond(hay, mot string) bool {
+	for _, w := range strings.FieldsFunc(hay, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		// Les mots courts (« de », « la »…) sont ignorés pour éviter qu'un mot ne s'y glisse par
+		// préfixe, SAUF s'ils sont purement numériques : « Salon 2 » doit rester trouvable par
+		// « 2 » pour distinguer plusieurs appareils identiques dans la même pièce.
+		if len(w) < 3 && !estToutChiffres(w) {
+			continue
+		}
+		if w == mot || strings.HasPrefix(w, mot) || strings.HasPrefix(mot, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func estToutChiffres(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNettoye, modificateurDemande string, estAction bool) int {
 	nomApp := strings.ToLower(app.FriendlyName)
 	idApp := strings.ToLower(app.EntityID)
@@ -923,7 +968,7 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 			continue
 		}
 
-		if strings.Contains(nomApp, mot) || strings.Contains(idApp, mot) {
+		if motCorrespond(nomApp, mot) || motCorrespond(idApp, mot) {
 			matchPiece := false
 			for _, p := range a.GetPieces() {
 				if strings.EqualFold(p.Name, mot) {

@@ -83,7 +83,7 @@ type Reponse struct {
 
 // Enquete : demande qui exige que le code rassemble des faits avant que l'IA les explique.
 type Enquete struct {
-	Sujet string `json:"sujet"` // pourquoi_automatisation | diagnostic_piece | diagnostic_maison | resume | energie | conseil | annuler | notifier | repas | cuisiner | planifier | expliquer | bilan | aide | inventaire
+	Sujet string `json:"sujet"` // pourquoi_automatisation | diagnostic_piece | diagnostic_maison | resume | energie | conseil | annuler | notifier | repas | cuisiner | planifier | expliquer | bilan | aide | inventaire | creer_evenement
 	Piece string `json:"piece,omitempty"`
 	Debut string `json:"debut,omitempty"`
 	Fin   string `json:"fin,omitempty"`
@@ -334,7 +334,14 @@ rappellera ensuite pour que tu les expliques). Renseigne l'objet "enquete" :
   cuisiner ? » : le code cherche dans TOUTES les recettes de Mealie celles qui utilisent ces
   ingrédients ; ingredients = ce que l'utilisateur dit avoir, séparé par des virgules ;
 - sujet="aide" : « que sais-tu faire ? » ;
-- sujet="inventaire" + piece : « que puis-je contrôler dans le salon ? ».
+- sujet="inventaire" + piece : « que puis-je contrôler dans le salon ? » ;
+- sujet="creer_evenement" + message (titre de l'événement, obligatoire) + debut (ISO 8601 AVEC
+  l'heure précise, obligatoire — déduis la date depuis « jeudi », « demain », etc.) + fin
+  (ISO 8601, optionnel : défaut 1h après debut) + piece (optionnel : nom du calendrier si
+  l'utilisateur en a nommé un précis, ex. « sur l'agenda de Marie ») : « ajoute un rendez-vous
+  dentiste jeudi à 15h », « mets une réunion vendredi de 10h à 11h ». N'écrit JAMAIS sur un
+  calendrier de menus (Mealie) — uniquement un agenda personnel. Confirmation orale systématique
+  avant création (c'est persistant).
 
 9) type="speak" : question sur un état ACTUEL visible dans "contexte", ou
 discussion générale sans rapport avec la maison.

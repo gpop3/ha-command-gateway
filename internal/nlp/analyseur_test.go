@@ -344,7 +344,7 @@ func jeuDeCas() []cas {
 
 	// --- Cas possibles ---
 	curates := []cas{
-		structCas("thermostat serre", "sensor", "serre", false, "réel: -> capteurs serre (pas de climate.serre)"),
+		structCas("thermostat serre", "sensor", "serre", true, "réel: température ET humidité de la serre à égalité -> ambigu tant qu'aucun des deux mots n'est dit"),
 		structCas("thermostat serre humidie", "sensor", "serre", false, "réel mangle 'humidié' -> capteur humidité serre"),
 		structCas("quelle heure est il", "time", "", false, "réel: heure"),
 		structCas("allume lumiere tele", "light", "", false, "réel: Lumière télé (accents dans le vrai nom !)"),
@@ -360,7 +360,7 @@ func jeuDeCas() []cas {
 		structCas("salon", "", "salon", true, "3 covers Salon + batteries -> choix"),
 		structCas("chambre", "", "chambre", true, "covers + climate + light imprimante + battery"),
 		structCas("thermostat", "", "", true, "netatmo vs bureau vs (commutateur switch)"),
-		structCas("ferme volet", "", "", true, "objet sans pièce -> ambigu"),
+		structCas("ferme volet", "cover", "", false, "objet sans pièce -> résolu sans ambiguïté sur l'entité maîtresse « Volets maison »"),
 
 		// Rejets attendus
 		structCas("temperature cellier", "", "", false, "aucune entité cellier -> rejet"),

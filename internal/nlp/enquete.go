@@ -286,6 +286,9 @@ func (a *Analyseur) executerEnqueteGemini(session, texte string, rep *gemini.Rep
 	case "notifier":
 		return a.executerNotification(session, texte, rep, false)
 
+	case "creer_evenement":
+		return a.executerCreationEvenement(session, texte, rep, false)
+
 	case "expliquer":
 		return a.executerExplication(session, texte)
 
