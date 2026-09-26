@@ -3,7 +3,10 @@ package ha
 import (
 	"encoding/json"
 	"fmt"
+	"ha-command-gateway/internal/utils/conversion"
 	"ha-command-gateway/internal/utils/text"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +40,35 @@ var (
 	cibleApresMidiSpace   = text.Normaliser("après midi")
 )
 
+var (
+	joursSemaineNorm = map[string]time.Weekday{
+		"lundi": time.Monday, "mardi": time.Tuesday, "mercredi": time.Wednesday, "jeudi": time.Thursday,
+		"vendredi": time.Friday, "samedi": time.Saturday, "dimanche": time.Sunday,
+	}
+	reDansJours = regexp.MustCompile(`dans\s+(\d+)\s+jours?`)
+)
+
+// jourDansTexte retourne le décalage en jours (1 à 7) demandé par « dans 3 jours »
+// ou par un nom de jour (« lundi » = le prochain lundi), 0 sinon.
+func jourDansTexte(texte string) int {
+	t := conversion.RemplacerMotsParChiffres(texte)
+	if m := reDansJours.FindStringSubmatch(t); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil && n >= 1 && n <= 7 {
+			return n
+		}
+	}
+	for _, mot := range strings.Fields(t) {
+		if wd, ok := joursSemaineNorm[strings.Trim(mot, ".,!?;:")]; ok {
+			delta := (int(wd) - int(time.Now().Weekday()) + 7) % 7
+			if delta == 0 {
+				delta = 7
+			}
+			return delta
+		}
+	}
+	return 0
+}
+
 func (s *ServiceWeather) ExtraireParams(texte string) map[string]interface{} {
 	res := map[string]interface{}{}
 
@@ -47,6 +79,9 @@ func (s *ServiceWeather) ExtraireParams(texte string) map[string]interface{} {
 	case strings.Contains(texte, "demain"):
 		res["horizon"] = "daily"
 		res["jour"] = 1
+	case jourDansTexte(texte) > 0:
+		res["horizon"] = "daily"
+		res["jour"] = jourDansTexte(texte)
 	case strings.Contains(texte, "week end") || strings.Contains(texte, "weekend"):
 		res["horizon"] = "weekend"
 	case strings.Contains(texte, "semaine"):
@@ -287,10 +322,25 @@ func (s *ServiceWeather) construireMessageFactored(d MeteoData, canal string) (s
 
 	case "daily":
 		if len(d.Previsions) <= d.Jour {
+			if d.Jour >= 2 {
+				return i18n.GetPattern("meteo.jour.indispo"), nil
+			}
 			return i18n.GetPattern("meteo.demain.indispo"), nil
 		}
 		p := d.Previsions[d.Jour]
-		sb.WriteString(getPattern("meteo.demain.%canal%"))
+		switch {
+		case d.Jour == 2:
+			sb.WriteString(getPattern("meteo.apresdemain.%canal%"))
+		case d.Jour >= 3:
+			sb.WriteString(getPattern("meteo.jourseul.%canal%"))
+			nom := ""
+			if t := parseJour(p.DateTime); !t.IsZero() {
+				nom = joursFR[t.Weekday()]
+			}
+			params = append(params, nom)
+		default:
+			sb.WriteString(getPattern("meteo.demain.%canal%"))
+		}
 		params = append(params, tradCondition(p.Condition), p.Temperature)
 		if p.Precipitation > 0 {
 			sb.WriteString(getPattern("meteo.precipitation.%canal%"))

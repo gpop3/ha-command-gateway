@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"ha-command-gateway/internal/logx"
 
@@ -93,6 +94,57 @@ type Config struct {
 	ActiveVoice      bool
 	ActiveServerHttp bool
 	ActiveConsole    bool
+
+	// Gemini IA
+	GeminiActive  bool
+	GeminiPrimary bool
+	GeminiModel   string
+	GeminiAPIKey  string
+	GeminiDebug   bool // journalise le contexte envoyé à l'IA et sa réponse brute (niveau INFO)
+	GeminiTimeoutS int // délai max (secondes) d'attente d'une réponse Gemini (gros contextes = plus long)
+
+	// Réduction du contexte envoyé à l'IA
+	GeminiPreselection bool // false = tout le contexte HA est envoyé à chaque appel
+	GeminiContexteMax  int  // nombre d'entités retenues par le scoring
+
+	// Mémoire de conversation (par session)
+	GeminiMemoireTours    int // 0 = pas de mémoire
+	GeminiMemoireSecondes int
+
+	// Garde-fous
+	IAConfirmation     bool   // confirmation orale avant un SMS ou une automatisation
+	IANumerosAutorises string // numéros que l'IA peut viser (défaut : WHITELIST)
+
+	// Quotas locaux et robustesse (0 = illimité)
+	GeminiMaxRequetesMinute int
+	GeminiMaxRequetesJour   int
+	GeminiMaxTokensMinute   int
+	GeminiDelaiMinMs        int  // délai minimal entre deux appels
+	GeminiSecondeChance     bool // rappeler l'IA une fois quand le code rejette sa réponse
+	GeminiAnalyse           bool // analyse en deux appels (l'IA commente les données lues par le code)
+	IAConfirmationGroupe    int  // confirmation au-delà de ce nombre d'actions d'un coup (0 = jamais)
+	TarifKWh                float64 // prix du kWh (€) pour estimer un coût ; 0 = pas de coût
+
+	// Journal des décisions, apprentissage, mode ombre
+	DecisionsFile string // JSONL des échanges (vide = mémoire seulement)
+	DecisionsMaxMo   int // taille maximale du journal en Mo avant rotation (0 = jamais)
+	DecisionsAnciens int // nombre d'anciennes versions conservées
+	NLPApprisFile string // base des phrases apprises par l'IA (vide = mémoire seulement)
+	IAOmbre       bool   // mode ombre : l'autre moteur dit ce qu'il aurait fait
+
+	// Notification sur le téléphone et publication dans Home Assistant
+	NotifyService      string // service notify.* de l'application mobile (vide = détection auto)
+	HAPublish          bool   // publier capteurs et événements dans HA
+	HAPublishIntervalS int    // republication des capteurs (secondes)
+	HAEventName        string // type de l'événement publié à chaque commande
+	HAPublishPhrase    bool   // inclure la phrase dite dans l'événement
+
+	// Recherche de recettes par ingrédients (API de Mealie)
+	MealieURL   string // ex. http://maison.local:9925
+	MealieToken string // jeton d'API Mealie (profil utilisateur)
+
+	// Briefing à la demande
+	BriefingCalendrierRepas string // mot-clé des calendriers de repas (défaut : mealie ; vide = pas de section repas)
 }
 
 // Load charge la config depuis les variables d'environnement, avec des valeurs par défaut
@@ -188,6 +240,45 @@ func Load() *Config {
 		ActiveVoice:      getEnv("ACTIVE_VOICE", "true") == "true",
 		ActiveServerHttp: getEnv("ACTIVE_SERVER_HTTP", "true") == "true",
 		ActiveConsole:    getEnv("ACTIVE_CONSOLE", "true") == "true",
+
+		// Gemini
+		GeminiActive:  getEnv("GEMINI_ACTIVE", "false") == "true",
+		GeminiPrimary: getEnv("GEMINI_PRIMARY", "false") == "true",
+		GeminiModel:   getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
+		GeminiAPIKey:  getEnv("GEMINI_API_KEY", ""),
+		GeminiTimeoutS: getEnvInt("GEMINI_TIMEOUT_S", 20),
+		GeminiDebug:   getEnv("GEMINI_DEBUG", "false") == "true",
+
+		GeminiPreselection:    getEnv("GEMINI_PRESELECTION", "true") == "true",
+		GeminiContexteMax:     getEnvInt("GEMINI_CONTEXT_MAX", 40),
+		GeminiMemoireTours:    getEnvInt("GEMINI_MEMOIRE_TOURS", 3),
+		GeminiMemoireSecondes: getEnvInt("GEMINI_MEMOIRE_SECONDES", 180),
+		IAConfirmation:        getEnv("IA_CONFIRMATION", "true") == "true",
+		IANumerosAutorises:    getEnv("IA_NUMEROS_AUTORISES", ""),
+
+		GeminiMaxRequetesMinute: getEnvInt("GEMINI_MAX_REQUETES_MINUTE", 0),
+		GeminiMaxRequetesJour:   getEnvInt("GEMINI_MAX_REQUETES_JOUR", 0),
+		GeminiMaxTokensMinute:   getEnvInt("GEMINI_MAX_TOKENS_MINUTE", 0),
+		GeminiDelaiMinMs:        getEnvInt("GEMINI_DELAI_MIN_MS", 2000),
+		GeminiSecondeChance:     getEnv("GEMINI_SECONDE_CHANCE", "true") == "true",
+		GeminiAnalyse:           getEnv("GEMINI_ANALYSE", "true") == "true",
+		IAConfirmationGroupe:    getEnvInt("IA_CONFIRMATION_GROUPE", 5),
+		TarifKWh:                getEnvFloat("TARIF_KWH", 0),
+
+		DecisionsFile: getEnv("DECISIONS_FILE", "data/decisions.jsonl"),
+		DecisionsMaxMo:   getEnvInt("DECISIONS_MAX_MO", 5),
+		DecisionsAnciens: getEnvInt("DECISIONS_ANCIENS", 3),
+		NLPApprisFile: getEnv("NLP_APPRIS_FILE", "data/nlp_appris.json"),
+		IAOmbre:       getEnv("IA_OMBRE", "false") == "true",
+
+		NotifyService:      getEnv("NOTIFY_SERVICE", ""),
+		HAPublish:          getEnv("HA_PUBLISH", "true") == "true",
+		HAPublishIntervalS: getEnvInt("HA_PUBLISH_INTERVAL_S", 60),
+		HAEventName:        getEnv("HA_EVENT_NAME", "ha_command_gateway_command"),
+		HAPublishPhrase:    getEnv("HA_PUBLISH_PHRASE", "true") == "true",
+		MealieURL:          getEnv("MEALIE_URL", ""),
+		MealieToken:        getEnv("MEALIE_TOKEN", ""),
+		BriefingCalendrierRepas: getEnv("BRIEFING_CALENDRIER_REPAS", "mealie"),
 	}
 
 	// Construction automatique du whisperURL si non fourni
@@ -211,6 +302,16 @@ func getEnvInt(key string, fallback int) int {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	if val := os.Getenv(key); val != "" {
+		var f float64
+		if _, err := fmt.Sscanf(strings.ReplaceAll(val, ",", "."), "%f", &f); err == nil {
+			return f
+		}
 	}
 	return fallback
 }

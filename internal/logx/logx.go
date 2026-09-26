@@ -39,6 +39,10 @@ func init() {
 // SetNiveau fixe le niveau minimal affiché.
 func SetNiveau(n Niveau) { niveauMin.Store(int32(n)) }
 
+// DebugActif indique si le niveau debug est affiché (utile pour ne construire
+// de gros messages de debug que si nécessaire).
+func DebugActif() bool { return Niveau(niveauMin.Load()) <= NiveauDebug }
+
 // SetNiveauDepuisTexte accepte "debug" | "info" | "warn" | "error" (défaut : info).
 func SetNiveauDepuisTexte(s string) {
 	switch strings.ToLower(strings.TrimSpace(s)) {

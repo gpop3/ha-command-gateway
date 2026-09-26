@@ -13,6 +13,7 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - ./vosk-model:/opt/vosk-model
+      - ./data:/app/data # journal des décisions et phrases apprises (persistants)
     environment:
       - ALSA_DEVICE=plughw:CARD=Bar,DEV=0
       - GSM_PORT=/dev/ttyUSB0
