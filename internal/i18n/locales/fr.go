@@ -15,7 +15,7 @@ func init() {
 		"ok.action":             "✅ L'ordre a été exécuté sur : %s.",
 		"ok.message":            "✅ %s",
 		"erreur.lecture.parler": "Erreur lecture",
-		"conversation.recue":    "Conversation reçue : %s",
+		"conversation.recue":    "Conversation reçue : %s (conversation_id=%s)",
 
 		// ---- assistant ----
 		"assistant.pret":      "🚀 Assistant prêt (Voix + SMS + Console).",
@@ -649,6 +649,7 @@ func init() {
 		"suggestion.autre":     "Alors : %s ?",
 		"suggestion.abandon":   "D'accord, laisse tomber.",
 		"suggestion.etat":      "l'état de %s",
+		"suggestion.apprise":   "D'ailleurs, comme tu me le redis souvent, je retiens cette phrase pour %s : plus besoin de confirmer la prochaine fois.",
 		"confirmation.oubli":   "effacer le journal des échanges, ce que j'ai appris et nos conversations",
 		"oubli.fait":           "C'est fait : j'ai tout oublié.",
 		"annulation.notification": "la notification",

@@ -127,9 +127,14 @@ func (c *Client) TrouverAppareilMobile(cible string) (service, nom string, ok bo
 	if cible == "" {
 		return "", "", false
 	}
+	return trouverAppareilMobileDans(cible, c.AppareilsMobilesNommes())
+}
+
+// trouverAppareilMobileDans est la logique de correspondance pure (isolée de l'appel réseau à
+// Home Assistant) pour pouvoir être testée sans instance HA réelle.
+func trouverAppareilMobileDans(cible string, noms map[string]string) (service, nom string, ok bool) {
 	cibleNorm := " " + text.Normaliser(cible) + " "
 
-	noms := c.AppareilsMobilesNommes()
 	var candidatsService, candidatsNom []string
 	for svc, n := range noms {
 		nNorm := " " + text.Normaliser(n) + " "

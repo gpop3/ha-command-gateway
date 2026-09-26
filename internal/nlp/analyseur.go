@@ -56,6 +56,11 @@ type Analyseur struct {
 	suggestions      map[string]suggestionEnAttente
 	iaDegradee       bool
 	iaNote           string
+
+	// suggestionsRepetees compte, par phrase normalisée, les confirmations successives d'une
+	// même proposition « tu voulais dire… ? » (indépendant des sessions : la phrase revient
+	// souvent chez le même foyer, peu importe le canal) pour proposer de l'apprendre directement.
+	suggestionsRepetees map[string]*compteurSuggestion
 }
 
 // ConfigDesambiguisation paramètre la proposition de choix multiples lorsque plusieurs entités obtiennent un score très proche.
@@ -119,6 +124,7 @@ func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisa
 		dernieresReponses:  make(map[string]string),
 		dernierClassique:   make(map[string]suiteClassique),
 		suggestions:        make(map[string]suggestionEnAttente),
+		suggestionsRepetees: make(map[string]*compteurSuggestion),
 	}
 }
 
@@ -512,7 +518,14 @@ func (a *Analyseur) analyserEtExecuterInterne(session, texte string, rec *Decisi
 		case reponseOui:
 			rec.Moteur = "suggestion"
 			p := sug.propositions[sug.idx]
-			return a.executerMatch(session, p.app, p.texte)
+			msg, verbe, match, isAction, app := a.executerMatch(session, p.app, p.texte)
+			if match && isAction && app != nil {
+				if note := a.suivreConfirmationSuggestion(rec, p.texte, *app, verbe); note != "" && msg != nil {
+					m := messageTexte(texteComplet(msg) + " " + note)
+					msg = &m
+				}
+			}
+			return msg, verbe, match, isAction, app
 		case reponseNon:
 			rec.Moteur = "suggestion"
 			if sug.idx+1 < len(sug.propositions) {

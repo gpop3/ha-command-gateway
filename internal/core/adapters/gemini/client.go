@@ -89,7 +89,13 @@ type Enquete struct {
 	Fin   string `json:"fin,omitempty"`
 	// Message : texte à envoyer sur le téléphone (sujet notifier) ; vide = ta dernière réponse.
 	Message string `json:"message,omitempty"`
-	Cible   string `json:"cible,omitempty"`
+	// Cible : à qui/quel appareil envoyer la notification (sujet notifier), UNIQUEMENT si
+	// l'utilisateur a nommé un destinataire précis autre que lui-même (ex. « envoie ça à
+	// Grégory », « préviens Marie », « sur le téléphone de papa ») : mets alors ce nom tel
+	// quel (« Grégory », « Marie », « papa »). Laisse VIDE si l'utilisateur parle de son
+	// propre téléphone (« envoie-moi ça », « sur mon téléphone ») : vide = le téléphone par
+	// défaut, ne devine jamais un nom dans ce cas.
+	Cible string `json:"cible,omitempty"`
 	// Ingredients : ce que l'utilisateur dit avoir sous la main (sujet repas), séparés par des virgules.
 	Ingredients string `json:"ingredients,omitempty"`
 	// Recette : nom de la recette à mettre au plan de repas (sujet planifier) ; vide = au hasard.
@@ -111,12 +117,12 @@ type Recherche struct {
 
 // Classement décrit une comparaison de capteurs (« quelle pièce est la plus humide ? »).
 type Classement struct {
-	TypeMesure string `json:"type_mesure"`     // device_class : humidity, temperature...
-	Critere    string `json:"critere"`         // max | min | moyenne | actuel | actuel_min
-	Piece      string `json:"piece,omitempty"` // restreint à une pièce
-	Debut      string `json:"debut,omitempty"` // période (ISO 8601) ; vide = valeurs actuelles
+	TypeMesure string `json:"type_mesure"`         // device_class : humidity, temperature...
+	Critere    string `json:"critere"`             // max | min | moyenne | actuel | actuel_min
+	Piece      string `json:"piece,omitempty"`     // restreint à une pièce
+	Debut      string `json:"debut,omitempty"`     // période (ISO 8601) ; vide = valeurs actuelles
 	Fin        string `json:"fin,omitempty"`
-	Top        string `json:"top,omitempty"` // nombre de résultats
+	Top        string `json:"top,omitempty"`       // nombre de résultats
 }
 
 // Tour est un échange passé de la conversation (demande de l'utilisateur et

@@ -163,6 +163,59 @@ func (a *Analyseur) proposerSuggestions(session, nettoye string, estAction bool,
 	return &msg
 }
 
+// ---- « Tu voulais dire… ? » confirmé plusieurs fois de suite : apprentissage proactif ----
+
+// seuilPropositionApprentissage : nombre de confirmations identiques (même phrase, même
+// appareil, même verbe) avant d'apprendre la phrase directement, sans repasser par la
+// désambiguïsation la fois suivante.
+const seuilPropositionApprentissage = 3
+
+// compteurSuggestion suit, pour une phrase normalisée, la proposition confirmée la dernière
+// fois (appareil + verbe) et le nombre de fois de suite où c'est la même.
+type compteurSuggestion struct {
+	entityID string
+	verbe    string
+	n        int
+}
+
+// suivreConfirmationSuggestion enregistre la confirmation d'une proposition « tu voulais
+// dire… ? » ; une fois le même appareil/verbe confirmé `seuilPropositionApprentissage` fois
+// pour la même phrase, elle est apprise directement (comme une phrase comprise par l'IA) et
+// une note le signale. Un « non, pas ça » juste après pourra toujours la faire oublier (même
+// mécanisme que pour l'apprentissage par l'IA). Restreint aux domaines apprenables (états
+// simples) ; retourne "" tant que rien n'est appris.
+func (a *Analyseur) suivreConfirmationSuggestion(rec *Decision, texte string, app ha.Appareil, verbe string) string {
+	if !domainesApprenables[app.Domain] || strings.TrimSpace(verbe) == "" {
+		return ""
+	}
+	cle := clePhrase(texte)
+	if cle == "" || len(strings.Fields(texte)) > maxMotsAppris {
+		return ""
+	}
+
+	a.muSessions.Lock()
+	c := a.suggestionsRepetees[cle]
+	if c == nil || c.entityID != app.EntityID || c.verbe != verbe {
+		c = &compteurSuggestion{entityID: app.EntityID, verbe: verbe}
+		a.suggestionsRepetees[cle] = c
+	}
+	c.n++
+	n := c.n
+	if n >= seuilPropositionApprentissage {
+		delete(a.suggestionsRepetees, cle)
+	}
+	a.muSessions.Unlock()
+
+	if n < seuilPropositionApprentissage {
+		return ""
+	}
+
+	actions := []gemini.Action{{Domain: app.Domain, Verbe: verbe, EntityID: app.EntityID}}
+	a.appris.apprendre(cle, strings.TrimSpace(texte), actions)
+	rec.cleAppris = cle
+	return i18n.T("suggestion.apprise", nomAppareil(app))
+}
+
 // ---- Message quand l'IA est suspendue ----
 
 // surErreurIA : quand l'IA devient indisponible (disjoncteur ouvert, quota atteint), l'assistant
@@ -292,6 +345,7 @@ func (a *Analyseur) oublierTout() *types.Message {
 	a.dernieresReponses = make(map[string]string)
 	a.dernierClassique = make(map[string]suiteClassique)
 	a.suggestions = make(map[string]suggestionEnAttente)
+	a.suggestionsRepetees = make(map[string]*compteurSuggestion)
 	a.muSessions.Unlock()
 	msg := messageTexte(i18n.T("oubli.fait"))
 	return &msg
