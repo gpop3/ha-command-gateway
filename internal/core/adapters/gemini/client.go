@@ -89,6 +89,7 @@ type Enquete struct {
 	Fin   string `json:"fin,omitempty"`
 	// Message : texte à envoyer sur le téléphone (sujet notifier) ; vide = ta dernière réponse.
 	Message string `json:"message,omitempty"`
+	Cible string `json:"cible,omitempty"`
 	// Ingredients : ce que l'utilisateur dit avoir sous la main (sujet repas), séparés par des virgules.
 	Ingredients string `json:"ingredients,omitempty"`
 	// Recette : nom de la recette à mettre au plan de repas (sujet planifier) ; vide = au hasard.
@@ -313,9 +314,11 @@ rappellera ensuite pour que tu les expliques). Renseigne l'objet "enquete" :
   plan de repas Mealie ; laisse recette VIDE pour « propose-moi un dîner au hasard » ;
 - sujet="bilan" + debut / fin (défaut : les 7 derniers jours) : « fais-moi le bilan de la
   semaine » (énergie, extrêmes de température, automatisations les plus actives, anomalies) ;
-- sujet="notifier" : « envoie-moi ça sur mon téléphone » : notification sur le téléphone
-  de l'utilisateur. message = le texte à envoyer ; laisse-le vide pour envoyer ta
-  dernière réponse (le code demandera confirmation) ;
+- sujet="notifier" : « envoie-moi ça sur mon téléphone », « préviens Grégory que… » :
+  notification sur une application mobile Home Assistant. message = le texte à envoyer ;
+  laisse-le vide pour envoyer ta dernière réponse. cible = le nom du destinataire UNIQUEMENT
+  si l'utilisateur en a nommé un autre que lui-même (« envoie ça à Grégory » → cible="Grégory" ;
+  « envoie-moi ça » → cible vide, ne l'invente jamais) (le code demandera confirmation) ;
 - sujet="repas" + debut / fin (ISO 8601 ; défaut : demain) : « qu'est-ce que je prépare
   demain soir ? » (le plan de repas : ce qui demande de l'avance, comme décongeler) ;
 - sujet="cuisiner" + ingredients : « j'ai du riz et des œufs, qu'est-ce que je peux
@@ -344,6 +347,18 @@ de l'utilisateur et tes réponses JSON précédentes). Utilise-les pour comprend
 suites (« et demain ? », « et dans la chambre ? », « oui, le 06... »). Mets
 attend_reponse=true UNIQUEMENT si ta reponse_vocale est une question qui attend une
 réponse de l'utilisateur (« quel numéro ? »), sinon laisse-le à false.
+
+ATTENTION : ce canal peut être partagé entre plusieurs personnes de la maison (un
+même assistant vocal, une même conversation Home Assistant réutilisée). Les échanges
+précédents ne sont PAS forcément liés à la nouvelle demande, même s'ils sont récents :
+traite CHAQUE demande comme indépendante par défaut, et ne réutilise une entité, une
+pièce ou un sujet d'un échange précédent QUE si la nouvelle phrase le désigne clairement
+(un pronom sans antécédent dans la phrase elle-même — « lui », « ça », « elle » —, une
+ellipse évidente — « et dans la chambre ? », « et demain ? » —, ou une réponse directe à
+UNE question que TU viens de poser — un chiffre après « quel numéro ? », « oui »/« non »
+après une confirmation). Si la nouvelle demande se suffit à elle-même (elle nomme sa
+propre pièce, son propre appareil, son propre sujet), ignore l'historique : ne mélange
+jamais deux demandes sans rapport parce qu'elles se suivent dans le temps.
 
 Règles générales :
 - N'invente JAMAIS un entity_id absent de "contexte" (il ne contient que les

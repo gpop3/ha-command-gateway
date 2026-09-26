@@ -138,15 +138,27 @@ func interpreterAnnulation(texte string) bool {
 	return declencheur
 }
 
-// cleAnnulation regroupe les interfaces locales (voix, console, Home Assistant) en une seule pile
-// d'annulation : chaque requête HA Assist a sa propre conversation, et « annule ça » doit défaire
-// la dernière commande même si elle a été donnée par un autre canal local. Un numéro de téléphone
-// (SMS) garde sa pile à lui.
+// cleAnnulation choisit la pile d'annulation à utiliser pour une session.
+//
+// Un numéro de téléphone (SMS) garde sa pile à lui. Chaque requête Home Assistant Assist
+// (voix HA, dashboard...) a sa propre conversation (un nouveau conversation_id à chaque tour) :
+// sans regroupement, « annule ça » ne retrouverait jamais la commande précédente puisqu'elle
+// aurait été mémorisée sous un autre identifiant de session. On regroupe donc toutes les
+// conversations HA Assist (préfixe "http:") sous une seule pile partagée "ha_assist".
+//
+// En revanche, on NE mélange PAS ce canal avec les autres canaux locaux (voix native, console) :
+// un regroupement global ("local" unique pour tout) faisait qu'une commande donnée par une
+// interface pouvait être annulée — ou empêchait un « rien à annuler » correct — à cause d'une
+// commande sans rapport passée par une autre interface. Chaque canal fixe (voix, console) garde
+// donc sa propre pile, ce qui est déjà stable d'un appel à l'autre (contrairement à HA Assist).
 func cleAnnulation(session string) string {
 	if _, ok := normaliserNumero(session); ok {
 		return session
 	}
-	return "local"
+	if strings.HasPrefix(session, "http:") {
+		return "ha_assist"
+	}
+	return session
 }
 
 // aUneAnnulation : une commande récente de la session peut-elle être annulée ?
@@ -401,25 +413,48 @@ func (a *Analyseur) executerEnqueteGemini(session, texte string, rep *gemini.Rep
 
 // ---- Notification sur le téléphone ----
 
-// serviceNotification retourne le service notify.* à utiliser : NOTIFY_SERVICE, sinon
-// l'application mobile HA détectée (la première par ordre alphabétique s'il y en a plusieurs).
-func (a *Analyseur) serviceNotification() string {
+// serviceNotification retourne le service notify.* à utiliser et le nom (convivial) à annoncer
+// à l'utilisateur pour identifier l'appareil visé :
+//   - si `cible` désigne clairement un appareil/une personne (« Grégory », « le téléphone de
+//     Marie »…) parmi les applications mobiles connues de Home Assistant, c'est CELUI-LÀ qui est
+//     utilisé, quelle que soit la configuration NOTIFY_SERVICE (qui ne concerne que le cas par
+//     défaut, sans destinataire précisé) ;
+//   - sinon, NOTIFY_SERVICE s'il est configuré (le téléphone par défaut : « ton téléphone ») ;
+//   - sinon, l'application mobile détectée automatiquement (la première par ordre alphabétique
+//     s'il y en a plusieurs — dans ce cas, le nom réel de l'appareil est annoncé pour éviter de
+//     prétendre à tort qu'il s'agit de « ton téléphone »).
+func (a *Analyseur) serviceNotification(cible string) (service, libelle string) {
+	if cible = strings.TrimSpace(cible); cible != "" {
+		if svc, nom, ok := a.haClient.TrouverAppareilMobile(cible); ok {
+			return svc, nom
+		}
+		logx.InfoT("notification.cible.introuvable", cible)
+	}
+
 	if s := strings.TrimSpace(a.ia.ServiceNotification); s != "" {
-		return s
+		return s, i18n.T("notification.libelle.tonTelephone")
+	}
+
+	noms := a.haClient.AppareilsMobilesNommes()
+	if len(noms) == 0 {
+		return "", ""
 	}
 	services := a.haClient.ServicesMobiles()
-	if len(services) == 0 {
-		return ""
+	svc := services[0]
+	if len(services) == 1 {
+		return svc, i18n.T("notification.libelle.tonTelephone")
 	}
-	if len(services) > 1 {
-		logx.InfoT("notification.plusieurs", strings.Join(services, ", "), services[0])
-	}
-	return services[0]
+	logx.InfoT("notification.plusieurs", strings.Join(services, ", "), svc)
+	return svc, noms[svc]
 }
 
-// executerNotification envoie un texte sur le téléphone de l'utilisateur (application mobile
-// de Home Assistant) — par défaut la dernière réponse de l'assistant. Confirmation orale comme
-// pour un SMS (sauf si `confirme`, déjà obtenue).
+// executerNotification envoie un texte sur le téléphone (application mobile Home Assistant) de
+// la personne visée — par défaut la dernière réponse de l'assistant, envoyée sur le téléphone par
+// défaut (NOTIFY_SERVICE ou, à défaut, l'unique application détectée). Si l'IA a identifié un
+// destinataire précis (`e.Cible`, ex. « envoie ça à Grégory »), on cible directement son
+// application mobile plutôt que de toujours prendre la première trouvée. Confirmation orale comme
+// pour un SMS (sauf si `confirme`, déjà obtenue) ; la confirmation et le message final annoncent
+// le VRAI destinataire, jamais « ton téléphone » quand ce n'est pas le cas.
 func (a *Analyseur) executerNotification(session, texte string, rep *gemini.Reponse, confirme bool) (*types.Message, string, bool, bool, *ha.Appareil, []string) {
 	e := rep.Enquete
 	message := strings.TrimSpace(e.Message)
@@ -432,24 +467,25 @@ func (a *Analyseur) executerNotification(session, texte string, rep *gemini.Repo
 	}
 	e.Message = message // fige le texte : c'est celui qui sera confirmé puis envoyé
 
-	if a.ia.Confirmation && !confirme {
-		a.definirConfirmation(session, confirmationEnAttente{rep: rep, texte: texte})
-		msg := messageTexte(i18n.T("confirmation.demande", i18n.T("confirmation.notification", tronquerTexte(message, 120))))
-		return &msg, "", true, false, nil, nil
-	}
-
-	service := a.serviceNotification()
+	service, libelle := a.serviceNotification(e.Cible)
 	if service == "" {
 		msg := messageTexte(i18n.T("notification.aucun.service"))
 		return &msg, "", true, false, nil, nil
 	}
+
+	if a.ia.Confirmation && !confirme {
+		a.definirConfirmation(session, confirmationEnAttente{rep: rep, texte: texte})
+		msg := messageTexte(i18n.T("confirmation.demande", i18n.T("confirmation.notification.cible", tronquerTexte(message, 120), libelle)))
+		return &msg, "", true, false, nil, nil
+	}
+
 	if err := a.haClient.Notifier(service, i18n.T("notification.titre"), message); err != nil {
 		logx.WarnT("gemini.notification.erreur", err)
 		msg := messageTexte(i18n.T("notification.echec"))
 		return &msg, "", true, false, nil, nil
 	}
 	a.empilerAnnulation(session, groupeAnnulation{quand: time.Now(), nonAnnulables: []string{i18n.T("annulation.notification")}})
-	msg := messageTexte(i18n.T("notification.envoyee"))
+	msg := messageTexte(i18n.T("notification.envoyee.cible", libelle))
 	return &msg, "", true, false, nil, nil
 }
 
