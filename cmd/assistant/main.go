@@ -66,7 +66,7 @@ func main() {
 		if cfg.GeminiAPIKey == "" {
 			logx.WarnT("gemini.cle.manquante")
 		} else {
-			geminiClient = gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel)
+			geminiClient = gemini.New(cfg.GeminiAPIKey, cfg.GeminiModel, time.Duration(cfg.GeminiTimeoutS)*time.Second)
 			geminiClient.ActiverDebug(cfg.GeminiDebug)
 			geminiClient.DefinirQuotas(gemini.Quotas{
 				RequetesMinute: cfg.GeminiMaxRequetesMinute,

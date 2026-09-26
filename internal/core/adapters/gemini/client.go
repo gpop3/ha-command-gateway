@@ -89,7 +89,7 @@ type Enquete struct {
 	Fin   string `json:"fin,omitempty"`
 	// Message : texte à envoyer sur le téléphone (sujet notifier) ; vide = ta dernière réponse.
 	Message string `json:"message,omitempty"`
-	Cible string `json:"cible,omitempty"`
+	Cible   string `json:"cible,omitempty"`
 	// Ingredients : ce que l'utilisateur dit avoir sous la main (sujet repas), séparés par des virgules.
 	Ingredients string `json:"ingredients,omitempty"`
 	// Recette : nom de la recette à mettre au plan de repas (sujet planifier) ; vide = au hasard.
@@ -111,12 +111,12 @@ type Recherche struct {
 
 // Classement décrit une comparaison de capteurs (« quelle pièce est la plus humide ? »).
 type Classement struct {
-	TypeMesure string `json:"type_mesure"`         // device_class : humidity, temperature...
-	Critere    string `json:"critere"`             // max | min | moyenne | actuel | actuel_min
-	Piece      string `json:"piece,omitempty"`     // restreint à une pièce
-	Debut      string `json:"debut,omitempty"`     // période (ISO 8601) ; vide = valeurs actuelles
+	TypeMesure string `json:"type_mesure"`     // device_class : humidity, temperature...
+	Critere    string `json:"critere"`         // max | min | moyenne | actuel | actuel_min
+	Piece      string `json:"piece,omitempty"` // restreint à une pièce
+	Debut      string `json:"debut,omitempty"` // période (ISO 8601) ; vide = valeurs actuelles
 	Fin        string `json:"fin,omitempty"`
-	Top        string `json:"top,omitempty"`       // nombre de résultats
+	Top        string `json:"top,omitempty"` // nombre de résultats
 }
 
 // Tour est un échange passé de la conversation (demande de l'utilisateur et
@@ -126,14 +126,17 @@ type Tour struct {
 	Reponse string
 }
 
-func New(apiKey, model string) *Client {
+func New(apiKey, model string, timeout time.Duration) *Client {
 	if model == "" {
 		model = "gemini-3.1-flash-lite"
+	}
+	if timeout <= 0 {
+		timeout = 20 * time.Second
 	}
 	return &Client{
 		apiKey:   apiKey,
 		model:    model,
-		http:     &http.Client{Timeout: 8 * time.Second},
+		http:     &http.Client{Timeout: timeout},
 		delaiMin: 2 * time.Second,
 	}
 }
@@ -419,6 +422,7 @@ func schemaReponse() map[string]interface{} {
 					"debut":       propriete("STRING"),
 					"fin":         propriete("STRING"),
 					"message":     propriete("STRING"),
+					"cible":       propriete("STRING"),
 					"ingredients": propriete("STRING"),
 					"recette":     propriete("STRING"),
 					"repas":       propriete("STRING"),

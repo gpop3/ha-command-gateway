@@ -467,7 +467,13 @@ func (a *Analyseur) executerNotification(session, texte string, rep *gemini.Repo
 	}
 	e.Message = message // fige le texte : c'est celui qui sera confirmé puis envoyé
 
-	service, libelle := a.serviceNotification(e.Cible)
+	// e.Cible est le champ normal (déclaré dans le schéma envoyé à Gemini) ; e.Piece est un
+	// repli défensif au cas où l'IA y aurait quand même mis le destinataire par erreur.
+	cible := strings.TrimSpace(e.Cible)
+	if cible == "" {
+		cible = strings.TrimSpace(e.Piece)
+	}
+	service, libelle := a.serviceNotification(cible)
 	if service == "" {
 		msg := messageTexte(i18n.T("notification.aucun.service"))
 		return &msg, "", true, false, nil, nil
@@ -475,7 +481,7 @@ func (a *Analyseur) executerNotification(session, texte string, rep *gemini.Repo
 
 	if a.ia.Confirmation && !confirme {
 		a.definirConfirmation(session, confirmationEnAttente{rep: rep, texte: texte})
-		msg := messageTexte(i18n.T("confirmation.demande", i18n.T("confirmation.notification.cible", tronquerTexte(message, 120), libelle)))
+		msg := messageTexte(i18n.T("confirmation.demande", i18n.T("confirmation.notification.cible", libelle, tronquerTexte(message, 120))))
 		return &msg, "", true, false, nil, nil
 	}
 
