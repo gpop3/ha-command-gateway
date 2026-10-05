@@ -379,6 +379,251 @@ sont stockés positifs et soustraits dans le calcul.
 
 ---
 
+## IA (Gemini)
+
+[#ia-gemini](#ia-gemini)
+
+Gemini peut servir de moteur principal (`GEMINI_PRIMARY=true`) ou de secours
+quand le NLP classique ne comprend pas. **Gemini propose, le code décide** : chaque
+réponse est validée (entité existante du bon domaine, verbe connu, action
+autorisée) avant toute exécution.
+
+| Variable         | Défaut                  | Description                                                                                       |
+| ---------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `GEMINI_ACTIVE`  | `false`                 | Active l'IA.                                                                                      |
+| `GEMINI_PRIMARY` | `false`                 | L'IA passe avant le NLP classique.                                                                |
+| `GEMINI_MODEL`   | `gemini-3.1-flash-lite` | Modèle utilisé.                                                                                   |
+| `GEMINI_API_KEY` | *(vide)*                | Clé API (envoyée dans le header `x-goog-api-key`, jamais dans l'URL).                             |
+| `GEMINI_DEBUG`   | `false`                 | Journalise (INFO) le prompt + contexte envoyés, la réponse brute et les tokens. Sinon : `LOG_LEVEL=debug`. |
+| `GEMINI_PRESELECTION` | `true`             | Réduit le contexte aux entités pertinentes pour la phrase. **`false` = tout le contexte HA est envoyé à chaque appel.** |
+| `GEMINI_CONTEXT_MAX`  | `40`               | Entités retenues par le scoring NLP (les pièces citées s'y ajoutent).                             |
+| `GEMINI_MEMOIRE_TOURS` | `3`               | Échanges gardés par session ; `0` désactive la mémoire.                                           |
+| `GEMINI_MEMOIRE_SECONDES` | `180`          | Durée avant oubli d'une conversation inactive.                                                    |
+| `IA_CONFIRMATION` | `true`                 | Confirmation orale avant un SMS ou une automatisation ; `false` = exécution directe.              |
+| `GEMINI_SECONDE_CHANCE` | `true`             | Quand le code rejette la réponse de l'IA (entité inconnue, verbe invalide…), la rappeler une fois avec le motif précis. |
+| `GEMINI_ANALYSE`     | `true`                  | Analyse en deux appels : après une lecture d'historique ou un classement, l'IA commente les chiffres (« est-ce normal ? »). |
+| `BRIEFING_CALENDRIER_REPAS` | `mealie`         | Mot présent dans le nom des calendriers de repas (section « Au menu ») ; vide = pas de repas.    |
+| `GEMINI_MAX_REQUETES_MINUTE` / `_JOUR` | `0`       | Quotas locaux de requêtes (`0` = illimité).                                                       |
+| `GEMINI_MAX_TOKENS_MINUTE` | `0`               | Quota local de tokens sur 60 s glissantes (`0` = illimité).                                       |
+| `GEMINI_DELAI_MIN_MS` | `2000`                 | Délai minimal entre deux appels (anti-rafale).                                                    |
+| `IA_NUMEROS_AUTORISES` | *(vide → `WHITELIST`)* | Seuls numéros que l'IA peut viser dans une action de script.                                 |
+
+### Contexte réduit, mémoire, pièces et garde-fous
+
+- **Contexte réduit** : au lieu des centaines d'états de HA, Gemini reçoit les `GEMINI_CONTEXT_MAX`
+  entités les mieux classées par le scoring NLP pour la phrase, **toutes les entités des pièces citées**
+  (« éteins tout dans le salon »), et toujours les scripts, la météo, les minuteurs, les lecteurs média et
+  les entités virtuelles. `GEMINI_PRESELECTION=false` rétablit l'envoi complet. `LOG_LEVEL=debug` affiche
+  « Contexte IA : N entités envoyées sur M ». Si l'entité voulue manque, augmente `GEMINI_CONTEXT_MAX`.
+- **Pièces** : lues dans le registre des zones de HA (WebSocket, **token administrateur requis**) et
+  jointes à chaque entité (`piece`). Sans accès au registre, l'assistant fonctionne sans cette information.
+- **Mémoire de conversation** : les derniers échanges (3 par défaut, 3 minutes) sont renvoyés à Gemini pour
+  comprendre « et demain ? ». Elle est **propre à chaque session et jamais partagée** : la voix, la console,
+  chaque numéro SMS et **chaque conversation Home Assistant** (`conversation_id` envoyé par HA) ont la
+  leur. Elle vit en RAM, expire toute seule et n'est jamais écrite sur disque. Quand Gemini pose une question
+  (« quel numéro ? »), la voix reste à l'écoute et HA garde le micro ouvert (`continue_conversation`).
+- **Garde-fous** : une action de script qui vise un numéro absent de `IA_NUMEROS_AUTORISES` (par défaut
+  `WHITELIST`) est refusée ; un SMS et toute action sur une automatisation demandent une confirmation
+  orale (« Je vais … Tu confirmes ? » → oui / non, 30 s). La réponse est interprétée par le code, pas par l'IA.
+
+### Robustesse et retour vocal
+
+- **Disjoncteur** : après un `429` (pour la durée conseillée par l'API, 10 min maximum) ou 3 échecs
+  consécutifs (timeouts, 5xx), l'IA est suspendue 60 s et le NLP classique prend le relais, sans spam de
+  logs. Les quotas locaux (`GEMINI_MAX_*`) protègent le compte ; `LOG_LEVEL=debug` affiche l'usage du jour.
+- **Seconde chance** : si l'IA propose une entité inexistante, un verbe invalide ou une action interdite, elle
+  est rappelée une fois avec le motif exact (et la liste des verbes possibles) avant le repli sur le NLP classique.
+- **Retour parlé** : après une action, l'assistant dit ce qui a été fait (« J'ai éteint Salon et Cuisine. »,
+  « Volet salon réglé à 50 pour cent. »), y compris les échecs partiels. C'est le code qui formule la phrase,
+  seulement après exécution.
+
+### Analyse, classement et briefing
+
+- **Formulation naturelle** : les réponses d'historique, de classement, de journal et de recherche sont
+  reformulées à l'oral par un second appel léger (« hier soir, il a fait entre 18 et 21 degrés… »), au lieu
+  d'un compte rendu chiffré récité. Sans IA (ou si l'appel échoue), le résumé du code est lu tel quel.
+- **Analyse en deux appels** : « donne-moi les stats de la serre aujourd'hui, est-ce normal ? » → appel 1 :
+  l'IA choisit l'entité et la période ; le code lit l'historique et calcule min / max (avec leur heure) /
+  moyenne ; appel 2 (léger, sans le contexte maison) : l'IA commente ces chiffres. Elle ne connaît pas
+  tes seuils : quand elle s'appuie sur un ordre de grandeur général, elle le dit. En cas d'échec du second
+  appel, tu as quand même le résumé chiffré. `GEMINI_ANALYSE=false` le désactive.
+- **Classement** (`classement`) : « quelle pièce est la plus humide ? », « quand l'humidité était-elle au plus haut
+  dans la salle de bain ? ». Le code parcourt les capteurs d'une `device_class`, les rattache aux pièces HA,
+  et classe (valeurs actuelles, ou max / min / moyenne sur une période de 7 jours maximum).
+- **Briefing** : à la demande uniquement (« briefing », « fais-moi le point », « bonjour ») — il ne démarre
+  **jamais** à une heure fixe. Le code lit la météo du jour, l'agenda (hors calendriers de repas), les **repas du
+  jour** (calendriers Mealie) et les alertes (portes/fenêtres ouvertes, batteries < 15 %) ; l'IA en fait un texte
+  oral et y ajoute le **saint du jour** (elle le connaît : aucun calendrier n'est embarqué). Sans IA, le code lit
+  lui-même le briefing, sans saint du jour. « C'est quel saint aujourd'hui ? » est une simple question à l'IA.
+  Les titres d'agenda et de recettes sont transmis à l'IA pour ce second appel ; elle ne peut rien exécuter à ce
+  stade (sa sortie n'est que du texte lu à voix haute).
+
+### Journal, recherche dans les courbes et « depuis quand »
+
+- **Journal** (`journal`) : « qui a allumé la prise de la serre hier ? », « pourquoi la lumière du couloir s'est
+  allumée ? », « la dernière fois que l'automatisation X a tourné ? ». Le code lit `/api/logbook` et donne, pour
+  chaque changement, **ce qui l'a provoqué** : une automatisation, un script, un utilisateur HA, ou « sans auteur
+  identifié » (bouton physique, appareil). Le nom de l'utilisateur demande un token administrateur ; conseil :
+  crée un utilisateur HA dédié à l'assistant pour reconnaître ce qui vient de la voix ou d'Alexa.
+- **Recherche dans une courbe** (`recherche`) : « quand la température a chuté de 17 degrés ? » (éventuellement
+  « en moins de 30 minutes »), « la plus forte baisse de la nuit », « quand est-elle passée sous 15 ° ? ».
+  Le code cherche dans les points de l'historique ; l'IA fournit le capteur, le seuil et la période.
+- **Depuis quand** : chaque entité (hors capteurs numériques) porte l'heure de son dernier changement d'état,
+  et les automatisations / scripts leur `last_triggered` : « la porte est ouverte depuis longtemps ? »,
+  « le chauffage tourne depuis 6h, c'est normal ? ».
+- **Combien de fois / combien de temps** : l'historique d'un état (porte, chauffage…) indique le temps total et le
+  nombre de fois ; comparer deux périodes = deux lectures d'historique, commentées par le second appel.
+- L'historique de HA est purgé au bout de `purge_keep_days` (10 jours par défaut) : au-delà, rien à lire.
+- Les entités de présence (`person`, `device_tracker`) restent interdites à l'IA.
+
+### Journal des décisions, mode ombre, apprentissage, visibilité dans HA
+
+- **Journal des décisions** : chaque échange est consigné — phrase (numéros masqués), canal, **moteur** (`gemini`,
+  `classique`, `appris`, `confirmation`, `choix`), **type choisi par l'IA**, actions, motifs de rejet, seconde chance,
+  résultat, **appels IA, tokens et durée**. `GET /decisions?n=50&faux=1` (accès local, clé API) et, si
+  `DECISIONS_FILE` est défini, un fichier JSONL (une ligne par échange, dossier `data/` monté en volume).
+- **« Non, pas ça »** : dit dans les 3 minutes, marque le dernier échange comme **faux** (visible dans le journal,
+  filtre `faux=1`) et fait oublier la phrase apprise le cas échéant. `POST /decisions/faux?id=N` fait de même.
+- **Mode ombre** (`IA_OMBRE=true`) : le NLP classique et l'IA analysent chacun la phrase, mais un seul exécute ;
+  l'autre dit seulement ce qu'il aurait choisi. Les **désaccords** sont journalisés (warn + champ `ombre` du
+  journal) : ils montrent où régler le scoring et où le prompt se trompe. Quand c'est le NLP classique qui
+  exécute, l'IA ombre coûte des appels.
+- **Base apprise** (`NLP_APPRIS_FILE`) : une commande comprise par l'IA et **entièrement réussie** (lumières, prises,
+  volets, ventilateurs, thermostats, lecteurs média… — jamais un script, un SMS, une automatisation ni un texte libre)
+  est mémorisée. Quand l'IA n'est pas disponible (quota, panne, désactivée), la même phrase est comprise sans elle.
+  Une phrase signalée fausse est oubliée.
+- **Visibilité dans Home Assistant** (`HA_PUBLISH=true`) : capteurs `sensor.assistant_statut`,
+  `sensor.assistant_tokens_jour`, `binary_sensor.assistant_ia_suspendue`, `sensor.assistant_derniere_erreur_ia`
+  (republiés toutes les 60 s) et un **événement** `ha_command_gateway_command` à chaque commande (canal, moteur,
+  type, actions, résultat, durée, tokens, et la phrase si `HA_PUBLISH_PHRASE=true`), utilisable comme déclencheur
+  d'automatisation ou dans un tableau de bord. Ces états sont créés par l'API REST : ils ne sont pas des entités
+  de l'interface et disparaissent au redémarrage de HA jusqu'à la prochaine publication.
+- **« Envoie-moi ça sur mon téléphone »** : notification de l'application mobile HA (`NOTIFY_SERVICE`, sinon
+  détection de `notify.mobile_app_*`), par défaut avec la dernière réponse, **avec confirmation orale comme pour
+  un SMS**.
+- **Texte transmis aux scripts** (annonce sur l'Echo, SMS) : le texte est retrouvé dans le paramètre « message », le
+  complément de l'IA ou la phrase dite (dont on retire « sur l'echo dot »), puis placé dans le bon paramètre : un script
+  **sans champ déclaré** reçoit `message` et `message_vocal` ; un script **avec champs** reçoit le texte dans son champ de
+  type texte (un nom proposé par l'IA proche d'un champ — « message » pour « message_vocal » — est rattaché à ce champ).
+- **Trouver une recette avec ce que tu as** : « j'ai du riz et des œufs, qu'est-ce que je peux cuisiner ? ». Le code
+  cherche dans **toutes** les recettes de Mealie (pas seulement le plan de repas), classe d'abord celles où « tout y
+  est », puis celles qui utilisent le plus de tes ingrédients avec le moins de manquants (sel, poivre, eau et huile
+  sont supposés disponibles), et l'IA propose 1 à 3 recettes en disant ce qui manque. La correspondance se fait par
+  **mots entiers** (« riz » ne trouve pas « chorizo »). Nécessite l'API de Mealie : `MEALIE_URL` et `MEALIE_TOKEN`
+  (jeton d'API du profil utilisateur) ; les recettes et leurs ingrédients sont lus une fois puis gardés 12 h.
+  *(à vérifier : noms de champs de l'API Mealie)*.
+- **Menu de demain** : « qu'est-ce que je prépare demain soir ? » —
+  le plan de repas Mealie et le détail des recettes (ingrédients, étapes : décongeler, mariner…) *(à vérifier :
+  services `mealie.get_mealplan` / `get_recipe`, sinon titres des calendriers)*, comparés aux ingrédients dits. Le
+  briefing du soir mentionne le menu de demain et ce qui demande de l'avance.
+- **« Que sais-tu faire ? »** (exemples tirés de tes appareils) et **« que puis-je contrôler dans le salon ? »**
+  (inventaire d'une pièce d'après le registre des zones).
+
+### Enquêtes, annulation, supervision
+
+Le type `enquete` regroupe ce qui demande au code de **rassembler des faits** avant que l'IA les explique
+(second appel) :
+
+- **Pourquoi une automatisation ne s'est pas déclenchée** : activée ou désactivée, dernier déclenchement,
+  dernières exécutions (traces HA) avec la **condition qui a bloqué**, déclencheurs et conditions. Nécessite
+  une automatisation avec un `id` (créée dans l'interface) et un token administrateur.
+- **Diagnostic d'une pièce** (« pourquoi il fait froid dans la chambre ? ») : entités de la pièce (fenêtres
+  ouvertes depuis quand, chauffage, températures…), météo extérieure, derniers événements des 6 heures.
+- **Diagnostic de la maison** (« y a-t-il un problème ? ») : capteurs indisponibles depuis plus de 24 h,
+  batteries faibles, ouvertures ouvertes depuis plus de 30 min, lumières allumées depuis plus de 8 h,
+  automatisations désactivées, mises à jour en attente.
+- **Résumé d'une période** (« que s'est-il passé cette nuit ? ») : journal global filtré sur ce qui compte
+  (portes, lumières, volets, automatisations, scripts) ; les détecteurs de mouvement sont comptés.
+- **Consommation d'énergie** (« combien j'ai consommé aujourd'hui ? ») : somme des hausses des compteurs
+  `device_class: energy` (kWh, Wh), remises à zéro comprises ; coût estimé si `TARIF_KWH` est renseigné.
+- **Conseil** (« faut-il arroser ? », « je peux étendre le linge ? ») : météo (actuelle, 3 jours, pluie des
+  12 prochaines heures) + mesures demandées, puis décision motivée de l'IA.
+- **Annuler** (« annule ça », « annuler l'action », « défais ça », « remets comme avant », « reviens en arrière » —
+  toutes les formes de « annuler » sont reconnues, et les mots inconnus `[unk]` de la reconnaissance vocale sont
+  tolérés ; « annule le minuteur » n'est pas une annulation de commande). Les interfaces **locales** (voix, console,
+  Home Assistant Assist) partagent une seule pile d'annulation — chaque requête Assist a sa propre conversation —,
+  un numéro de téléphone garde la sienne. Un SMS ou une notification envoyés sont listés comme « non annulables ».
+  Les phrases système (oui, non, annule ça, oublie tout…) sont ajoutées à la **grammaire Vosk**, qui sinon ne pourrait
+  jamais les reconnaître.
+  L'état d'avant chaque commande — de l'IA **comme du NLP classique** — est mémorisé (15 min, 5 commandes). La demande est reconnue **directement par
+  le code**, sans passer par l'IA (qui pouvait répondre « c'est annulé » sans rien faire). Lumières, prises,
+  ventilateurs, volets (ouverts/fermés en grand par `open_cover` / `close_cover`, sinon repositionnés), thermostats,
+  lecteurs média et automatisations sont restaurés ; **un SMS, un script ou une automatisation exécutés ne sont pas
+  annulables** (l'assistant le dit).
+- **Actions groupées** : au-delà de `IA_CONFIRMATION_GROUPE` actions d'un coup (5 par défaut), une confirmation
+  orale est demandée (« exécuter "éteins" sur 12 appareils… »).
+
+**Supervision** (`ACTIVE_SERVER_HTTP=true`, accès local seulement) :
+
+- `GET /health` : sonde de **vie**. 200 si la boucle de traitement répond, 503 si elle est bloquée (TTS ou
+  STT figés…). Le `Dockerfile` l'utilise comme `HEALTHCHECK` : `docker ps` affiche « healthy » / « unhealthy ».
+- `GET /status` (avec `Authorization: Bearer <API_KEY>` si définie) : version, état du WebSocket HA, taille du
+  catalogue, sessions IA, disjoncteur Gemini (ouvert ? reprise dans N s), appels et tokens du jour, dernière erreur.
+
+### Expliquer, planifier les repas, bilan de la semaine
+
+- **« Pourquoi tu as fait ça ? »** : l'assistant relit le dernier échange de la session dans le journal des décisions
+  (phrase dite, moteur qui l'a comprise — IA, NLP classique, phrase apprise —, entités choisies, rejets et seconde
+  chance) et l'explique, en proposant de corriger (« non, pas ça, puis redis-moi ce que tu voulais »).
+- **Planifier un repas dans Mealie** : « mets les pâtes au pesto vendredi soir » (recette retrouvée par son nom, le plus
+  proche gagne ; en cas de doute l'assistant liste les candidates) ou « propose-moi un dîner au hasard »
+  (`mealie.set_mealplan` / `mealie.set_random_mealplan` de Home Assistant *(à vérifier sur ta version)*). Il n'existe
+  pas de service HA pour retirer un repas du plan. Nécessite `MEALIE_URL` + `MEALIE_TOKEN`.
+- **Bilan de la semaine** (« fais-moi le bilan de la semaine ») : consommation d'énergie, capteurs les plus chauds /
+  froids / humides avec leur heure, automatisations les plus déclenchées, ouvertures les plus fréquentes, anomalies
+  actuelles ; l'IA en fait un récit. 14 jours au maximum (et l'historique HA est purgé au bout de `purge_keep_days`).
+- **Mealie est désactivé tant que `MEALIE_URL` est vide** : aucun appel (menu du briefing, plan de repas, recettes).
+
+### Sans IA : suites de phrase, « tu voulais dire ? », état de l'IA, données
+
+- **« Et dans la chambre ? »** : le NLP classique reprend la commande précédente (moins de 3 min) quand la phrase
+  suivante ne contient qu'un lieu — « allume la lumière du salon » puis « et dans la chambre ? » devient « allume la
+  lumière de la chambre » (la pièce est remplacée, ou ajoutée si la commande n'en avait pas). Une phrase qui contient
+  autre chose que le lieu (« température chambre ») n'est jamais réécrite.
+- **« Tu voulais dire… ? »** : quand ni l'IA ni le NLP ne comprennent, l'assistant propose l'appareil (et le verbe) le
+  plus proche — jusqu'à trois, l'un après l'autre : « oui » l'exécute, « non » passe au suivant. Jamais pour les
+  serrures, alarmes et caméras ; la voix reste à l'écoute pendant la proposition.
+- **Message quand l'IA est suspendue** : quand le disjoncteur s'ouvre (ou le quota local est atteint), l'assistant le dit
+  **une fois** — « je passe en mode simplifié » — devant sa prochaine réponse, puis annonce le retour de l'IA.
+- **Rotation du journal des décisions** : au-delà de `DECISIONS_MAX_MO` (5 Mo) le fichier est archivé
+  (`decisions.jsonl.1`, `.2`, `.3` : `DECISIONS_ANCIENS`). Les phrases apprises sont limitées à 500 entrées.
+- **« Oublie tout »** (aussi « efface ta mémoire ») : efface le journal (et ses archives), les phrases apprises et les
+  mémoires de conversation, **après confirmation** (irréversible, toujours demandée).
+
+### Types de réponse
+
+- **`speak`** : réponse parlée (état lu dans le contexte, discussion).
+- **`read`** : lecture via les services HA — météo future (`weather.get_forecasts`),
+  agenda passé/futur (`debut`/`fin` calculés par l'IA à partir de la date fournie
+  dans le prompt), heure/date, résumé maison, minuteur. Le message est construit et
+  prononcé par le code : l'IA ne relit jamais le contenu (pas d'injection via un titre d'agenda).
+- **`history`** : état d'une entité **dans le passé** (« la lumière du salon était allumée hier
+  soir ? », « quelle température cette nuit ? »). Le code lit `/api/history/period` sur la période
+  calculée par l'IA (31 jours maximum) et résume : min / max / moyenne pour un capteur numérique,
+  durée dans chaque état et changements sinon. Les domaines de présence/sécurité restent exclus.
+- **`action`** : une ou **plusieurs** commandes (« ouvre salon 1 et 2 » → 2 actions,
+  8 maximum). Réponse de synthèse unique, avec gestion de l'échec partiel.
+
+### Ce que l'IA peut piloter
+
+- **Scripts** : les paramètres (`fields`) de chaque script sont lus dans HA
+  (`GET /api/services`) et fournis à l'IA ; un nom de paramètre inconnu est rejeté et un
+  champ obligatoire manquant empêche l'exécution.
+- **Spotify sur une enceinte** : `source=spotify` + `cible=<nom exact de source_list>` ;
+  l'appareil est choisi (`select_source`) avant de relancer la lecture.
+- **Minuteurs** : deux modes.
+  - **Echo (Alexa Media Player ≥ 3.4.0)** : verbe `minuteur` sur le `media_player` de l'Echo →
+    `media_player.play_media` avec `media_content_type: custom` (commande vocale « mets un minuteur
+    de 10 minutes » / « annule le minuteur »). Le minuteur est natif : il sonne sur l'Echo.
+  - **Helpers HA** : domaine `timer` (« Lance le minuteur cuisine dix minutes », « combien
+    reste-t-il ? »). La fin est annoncée à voix haute (événement HA `timer.finished`).
+- **Automatisations** : *exécuter* (`trigger`), *activer* (`turn_on`) ou *désactiver* (`turn_off`) uniquement. Cette
+  restriction est appliquée par le code (`actionsIAAutorisees` dans `internal/ha/contexte_ia.go`),
+  pas par le prompt. Les domaines `person`, `device_tracker`, `camera`, `lock`,
+  `alarm_control_panel` et `update` restent interdits à l'IA.
+
+---
+
 ## Logs et internationalisation (i18n)
 
 Toutes les sorties passent par le logger centralisé `internal/logx`. Chaque

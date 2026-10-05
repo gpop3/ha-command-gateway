@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Gateway Assist",
+        "description": "Connecte Assist la gateway.",
+        "data": {
+          "base_url": "URL de la gateway (ex. http://192.168.1.50:8080)",
+          "api_key": "Clé API (optionnelle)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Cette gateway est déjà configurée."
+    }
+  }
+}

@@ -1,6 +1,9 @@
 package i18n
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Locale est une map de clés → messages pour une langue donnée
 type Locale map[string]string
@@ -71,4 +74,11 @@ func GetPattern(cle string) string {
 		return msg
 	}
 	return cle
+}
+
+// Echapper protège les « % » d'un texte libre (ex : réponse de l'IA) avant de le
+// faire passer par un fmt.Sprintf(texte, params...) : sans ça, « 45 % » devient
+// « %!d(MISSING) ».
+func Echapper(texte string) string {
+	return strings.ReplaceAll(texte, "%", "%%")
 }

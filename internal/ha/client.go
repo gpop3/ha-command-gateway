@@ -60,6 +60,8 @@ func NewClient(url, token string, piecesEnv string, timeoutClient time.Duration,
 	Register(newServiceDefault(c))
 	Register(NewServiceResumeMaison(c))
 	Register(NewServiceTime(c))
+	Register(NewServiceTimer(c))
+	Register(NewServiceBriefing(c))
 	Register(NewServiceAgenda(c))
 	Register(NewServiceWeather(c))
 
@@ -129,17 +131,19 @@ func (c *Client) post(path string, payload interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			logx.Error(err)
-		}
-	}(resp.Body)
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
-	if resp.StatusCode != http.StatusOK {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("%s", i18n.T("erreur.ha.reponse.post", resp.StatusCode, path))
 	}
-	return io.ReadAll(resp.Body)
+	return body, nil
 }
 
 // ---- API publique ----
@@ -258,4 +262,76 @@ func ParserPieces(input string) []Piece {
 
 func normaliserNom(input string) string {
 	return conversion.ChiffreVersLettre(input)
+}
+
+// AppelerService appelle un service HA sur une entité (WebSocket, repli HTTP).
+func (c *Client) AppelerService(domaine, service, entityID string, data map[string]interface{}) error {
+	if data == nil {
+		data = map[string]interface{}{}
+	}
+	if c.ws != nil {
+		target := map[string]interface{}{"entity_id": entityID}
+		if err := c.ws.CallService(domaine, service, target, data); err == nil {
+			return nil
+		} else {
+			logx.WarnT("ha.ws.callservice.echoue.fallback", err)
+		}
+	}
+	payload := make(map[string]interface{}, len(data)+1)
+	for k, v := range data {
+		payload[k] = v
+	}
+	payload["entity_id"] = entityID
+	_, err := c.post(fmt.Sprintf("/api/services/%s/%s", domaine, service), payload)
+	return err
+}
+
+// EtatBrut : un état HA avec tous ses attributs.
+type EtatBrut struct {
+	EntityID    string                 `json:"entity_id"`
+	State       string                 `json:"state"`
+	LastChanged string                 `json:"last_changed"`
+	Attributes  map[string]interface{} `json:"attributes"`
+}
+
+// etatsBruts lit tous les états (REST) avec leurs attributs.
+func (c *Client) etatsBruts() ([]EtatBrut, error) {
+	body, err := c.get("/api/states")
+	if err != nil {
+		return nil, err
+	}
+	var out []EtatBrut
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// etatBrut lit l'état complet d'UNE entité.
+func (c *Client) etatBrut(entityID string) (*EtatBrut, error) {
+	body, err := c.get("/api/states/" + entityID)
+	if err != nil {
+		return nil, err
+	}
+	var e EtatBrut
+	if err := json.Unmarshal(body, &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// EtatWebsocket décrit la connexion WebSocket : « absent », « connexion » ou « prêt ».
+func (c *Client) EtatWebsocket() string {
+	if c.ws == nil {
+		return "absent"
+	}
+	c.ws.readyMu.RLock()
+	ch := c.ws.ready
+	c.ws.readyMu.RUnlock()
+	select {
+	case <-ch:
+		return "prêt"
+	default:
+		return "connexion"
+	}
 }

@@ -34,6 +34,10 @@ jobs:
           go clean -cache
           go vet -tags nvosk ./...
 
+      - name: Test
+        run: go test -tags nvosk -count=1 -v ./...
+        continue-on-error: true
+
       - name: staticcheck
         uses: dominikh/staticcheck-action@v1
         with:

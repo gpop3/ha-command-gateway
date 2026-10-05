@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,6 +32,64 @@ type Client struct {
 	whitelist   []string
 	sessionKey  string // clé de chiffrement post-login (formatStr(pbkdf2password))
 	derniersLus map[string]bool
+
+	// echoMu/recemmentEnvoyes : garde-fou contre l'écho d'un SMS qu'on vient d'envoyer, relu
+	// comme reçu avant que le modem ait fini de marquer son SMSType à 2 (sent). Observé en
+	// pratique : la relecture tronque parfois les caractères multi-octets (emoji) du contenu,
+	// d'où la comparaison par préfixe plutôt que l'égalité stricte dans estEcho.
+	echoMu           sync.Mutex
+	recemmentEnvoyes map[string][]smsEnvoye
+}
+
+type smsEnvoye struct {
+	contenu string
+	envoye  time.Time
+}
+
+const fenetreEcho = 2 * time.Minute
+
+// marquerEnvoye enregistre un SMS qu'on vient d'envoyer, pour pouvoir reconnaître son écho.
+func (c *Client) marquerEnvoye(numero, message string) {
+	c.echoMu.Lock()
+	defer c.echoMu.Unlock()
+	if c.recemmentEnvoyes == nil {
+		c.recemmentEnvoyes = make(map[string][]smsEnvoye)
+	}
+	maintenant := time.Now()
+	liste := c.recemmentEnvoyes[numero]
+	liste = append(liste, smsEnvoye{contenu: message, envoye: maintenant})
+	// Ménage : ne garder que les envois récents, pour ne pas accumuler indéfiniment.
+	var purgee []smsEnvoye
+	for _, e := range liste {
+		if maintenant.Sub(e.envoye) < fenetreEcho {
+			purgee = append(purgee, e)
+		}
+	}
+	c.recemmentEnvoyes[numero] = purgee
+}
+
+// estEcho indique si `contenu` (un message qu'on vient de "recevoir" de `numero`) est en fait
+// l'écho d'un SMS qu'on a nous-mêmes envoyé à ce numéro il y a peu. Comparaison par préfixe,
+// insensible aux espaces de bord, car la relecture du modem peut tronquer les caractères
+// multi-octets (emoji) en fin de message.
+func (c *Client) estEcho(numero, contenu string) bool {
+	c.echoMu.Lock()
+	defer c.echoMu.Unlock()
+	contenu = strings.TrimSpace(contenu)
+	if contenu == "" {
+		return false
+	}
+	maintenant := time.Now()
+	for _, e := range c.recemmentEnvoyes[numero] {
+		if maintenant.Sub(e.envoye) >= fenetreEcho {
+			continue
+		}
+		envoye := strings.TrimSpace(e.contenu)
+		if strings.HasPrefix(envoye, contenu) || strings.HasPrefix(contenu, envoye) {
+			return true
+		}
+	}
+	return false
 }
 
 // SMS représente un message reçu
@@ -119,6 +178,10 @@ func (c *Client) setToken(token string) {
 // EnvoyerSMS envoie un SMS au numéro donné
 func (c *Client) EnvoyerSMS(numero, message string) error {
 	const maxRetries = 3
+
+	// Marqué AVANT l'envoi (pas après confirmation) : la relecture-écho peut survenir pendant
+	// même la fenêtre d'attente de confirmation (GetSendSMSResult), pas seulement après.
+	c.marquerEnvoye(numero, message)
 
 	var sendErr error
 	for attempt := range maxRetries {
@@ -247,11 +310,21 @@ func (c *Client) EcouterSMS(canal chan<- SMS) {
 				idsActuels[smsID] = struct{}{}
 
 				if _, ok := dejaTraite[cid][smsID]; !ok {
+					// smsType != 2 exclut en théorie les SMS envoyés, mais le modem peut encore
+					// renvoyer un SMS qu'on vient juste d'envoyer avec ce flag pas encore à jour
+					// (ex. réel : alerte envoyée à un numéro, relue comme reçue de ce même numéro
+					// dans les secondes qui suivent, avec l'émoji tronqué par l'encodage SMS —
+					// l'IA tentait alors d'« exécuter » sa propre alerte comme une commande).
+					// estEcho() rattrape ce cas en comparant au contenu qu'on vient d'envoyer.
 					if smsType != 2 && numeroConnu && contenu != "" && time.Since(parseSMSTime(smsTime)) < 5*time.Minute {
-						logx.InfoT("sms.recu", numero, contenu)
-						canal <- SMS{
-							Numero:  numero,
-							Message: strings.ToLower(contenu),
+						if c.estEcho(numero, contenu) {
+							logx.InfoT("modem.sms.echo.ignore", numero, contenu)
+						} else {
+							logx.InfoT("sms.recu", numero, contenu)
+							canal <- SMS{
+								Numero:  numero,
+								Message: strings.ToLower(contenu),
+							}
 						}
 					}
 

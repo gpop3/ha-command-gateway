@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Tache est une unité de traitement soumise par un service
 type Tache func()
@@ -34,5 +37,23 @@ func (b *Bus) Lancer(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// Ping vérifie que la boucle du bus consomme bien ses tâches (sonde de vie) : il y glisse
+// une tâche et attend qu'elle s'exécute. Faux si la file est pleine ou si la boucle est
+// bloquée (TTS ou STT figés, par exemple).
+func (b *Bus) Ping(timeout time.Duration) bool {
+	fait := make(chan struct{})
+	select {
+	case b.taches <- func() { close(fait) }:
+	default:
+		return false
+	}
+	select {
+	case <-fait:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }

@@ -49,13 +49,13 @@ func (s *Service) traiter(inputText string) {
 	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("console", inputText)
 	logx.InfoT("console.reponse", reponse)
 
-	if appareil == nil || reponse == nil {
+	if reponse == nil {
 		if match {
 			s.speaker.Parler("assistant.retour.erreur")
 		} else {
 			s.speaker.Parler("assistant.retour.pas.compris")
 		}
-	} else if isAction {
+	} else if isAction && appareil != nil {
 		s.speaker.Parler("assistant.retour.action", verbe, appareil.FriendlyName)
 	} else {
 		s.speaker.Parler(reponse.Voix.Texte, reponse.Voix.Params...)
