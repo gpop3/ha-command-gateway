@@ -135,11 +135,6 @@ func (c *Client) TrouverAppareilMobile(cible string) (service, nom string, ok bo
 func trouverAppareilMobileDans(cible string, noms map[string]string) (service, nom string, ok bool) {
 	cibleNorm := " " + text.Normaliser(cible) + " "
 
-	// Passe 1 : correspondance forte (le nom dit contient, ou est contenu dans, le nom convivial
-	// complet de l'appareil — ex. cible = nom exact de l'appareil). Priorité absolue : si un seul
-	// appareil correspond ainsi, c'est LUI, même si un mot isolé de son nom (« iPhone ») se
-	// retrouve aussi dans le nom d'un AUTRE appareil (bug réel : « iPhone de Grégory » devenait
-	// ambigu avec « iPhone de Marie » à cause du seul mot « iphone » partagé par les deux).
 	var candidatsService, candidatsNom []string
 	for svc, n := range noms {
 		nNorm := " " + text.Normaliser(n) + " "

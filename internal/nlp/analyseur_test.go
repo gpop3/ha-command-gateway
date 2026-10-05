@@ -397,7 +397,7 @@ func jeuDeCas() []cas {
 		// problème.
 		{phrase: "salon", domaine: "cover", piece: "salon", note: "3 covers Salon + batteries -> choix", catalogueAmbigu: true},
 		structCas("chambre", "", "chambre", true, "covers + climate + light imprimante + battery"),
-		{phrase: "thermostat", domaine: "climate", note: "netatmo vs bureau vs (commutateur switch)", catalogueAmbigu: true},
+		structCas("thermostat", "", "", true, "netatmo vs bureau vs (commutateur switch)"),
 		structCas("ferme volet", "cover", "", false, "objet sans pièce -> résolu sans ambiguïté sur l'entité maîtresse « Volets maison »"),
 
 		// Rejets attendus
