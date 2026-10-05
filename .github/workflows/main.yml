@@ -34,6 +34,14 @@ jobs:
           go clean -cache
           go vet -tags nvosk ./...
 
+      - name: Test
+        # continue-on-error : le harnais de calibrage NLP (internal/nlp/analyseur_test.go) contient
+        # des cas volontairement ouverts (ambiguïtés matérielles réelles, ex. plusieurs volets sans
+        # nom distinctif dans la même pièce) qui ne doivent pas bloquer le pipeline tant qu'ils
+        # n'ont pas été tranchés. Le job reste visible en warning (▲) plutôt que masqué en vert.
+        run: go test -tags nvosk -count=1 -v ./...
+        continue-on-error: true
+
       - name: staticcheck
         uses: dominikh/staticcheck-action@v1
         with:

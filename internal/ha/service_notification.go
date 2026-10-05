@@ -127,18 +127,39 @@ func (c *Client) TrouverAppareilMobile(cible string) (service, nom string, ok bo
 	if cible == "" {
 		return "", "", false
 	}
+	return trouverAppareilMobileDans(cible, c.AppareilsMobilesNommes())
+}
+
+// trouverAppareilMobileDans est la logique de correspondance pure (isolée de l'appel réseau à
+// Home Assistant) pour pouvoir être testée sans instance HA réelle.
+func trouverAppareilMobileDans(cible string, noms map[string]string) (service, nom string, ok bool) {
 	cibleNorm := " " + text.Normaliser(cible) + " "
 
-	noms := c.AppareilsMobilesNommes()
+	// Passe 1 : correspondance forte (le nom dit contient, ou est contenu dans, le nom convivial
+	// complet de l'appareil — ex. cible = nom exact de l'appareil). Priorité absolue : si un seul
+	// appareil correspond ainsi, c'est LUI, même si un mot isolé de son nom (« iPhone ») se
+	// retrouve aussi dans le nom d'un AUTRE appareil (bug réel : « iPhone de Grégory » devenait
+	// ambigu avec « iPhone de Marie » à cause du seul mot « iphone » partagé par les deux).
 	var candidatsService, candidatsNom []string
 	for svc, n := range noms {
 		nNorm := " " + text.Normaliser(n) + " "
 		if strings.Contains(nNorm, cibleNorm) || strings.Contains(cibleNorm, nNorm) {
 			candidatsService = append(candidatsService, svc)
 			candidatsNom = append(candidatsNom, n)
-			continue
 		}
-		// Recoupement mot à mot (« Grégory » dans « iPhone de Grégory »)
+	}
+	if len(candidatsService) == 1 {
+		return candidatsService[0], candidatsNom[0], true
+	}
+	if len(candidatsService) > 1 {
+		return "", "", false // plusieurs noms complets se recoupent : ambigu, on ne devine pas
+	}
+
+	// Passe 2 : aucune correspondance forte -> recoupement mot à mot (« Grégory » seul, dans
+	// « iPhone de Grégory »), seulement utilisée si la passe 1 n'a rien trouvé.
+	candidatsService, candidatsNom = nil, nil
+	for svc, n := range noms {
+		nNorm := " " + text.Normaliser(n) + " "
 		for _, mot := range strings.Fields(strings.TrimSpace(cibleNorm)) {
 			if len(mot) < 3 {
 				continue

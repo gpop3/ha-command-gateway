@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"ha-command-gateway/internal/ha"
 	"ha-command-gateway/internal/logx"
@@ -56,6 +57,11 @@ type Analyseur struct {
 	suggestions      map[string]suggestionEnAttente
 	iaDegradee       bool
 	iaNote           string
+
+	// suggestionsRepetees compte, par phrase normalisée, les confirmations successives d'une
+	// même proposition « tu voulais dire… ? » (indépendant des sessions : la phrase revient
+	// souvent chez le même foyer, peu importe le canal) pour proposer de l'apprendre directement.
+	suggestionsRepetees map[string]*compteurSuggestion
 }
 
 // ConfigDesambiguisation paramètre la proposition de choix multiples lorsque plusieurs entités obtiennent un score très proche.
@@ -119,6 +125,7 @@ func New(haClient *ha.Client, activePreselection bool, desamb ConfigDesambiguisa
 		dernieresReponses:  make(map[string]string),
 		dernierClassique:   make(map[string]suiteClassique),
 		suggestions:        make(map[string]suggestionEnAttente),
+		suggestionsRepetees: make(map[string]*compteurSuggestion),
 	}
 }
 
@@ -478,8 +485,17 @@ func (a *Analyseur) rejouerConfirmation(session string, conf confirmationEnAtten
 	if conf.rep.Enquete != nil && conf.rep.Enquete.Sujet == "oublier" {
 		return a.oublierTout(), "", true, false, nil
 	}
-	if conf.rep.Type == "enquete" {
-		msg, verbe, match, isAction, app, _ := a.executerNotification(session, conf.texte, conf.rep, true)
+	if conf.rep.Type == "enquete" && conf.rep.Enquete != nil {
+		var msg *types.Message
+		var verbe string
+		var match, isAction bool
+		var app *ha.Appareil
+		switch conf.rep.Enquete.Sujet {
+		case "creer_evenement":
+			msg, verbe, match, isAction, app, _ = a.executerCreationEvenement(session, conf.texte, conf.rep, true)
+		default:
+			msg, verbe, match, isAction, app, _ = a.executerNotification(session, conf.texte, conf.rep, true)
+		}
 		return msg, verbe, match, isAction, app
 	}
 	msg, verbe, match, isAction, app, _ := a.executerActionsGemini(session, conf.texte, conf.rep, true)
@@ -512,7 +528,14 @@ func (a *Analyseur) analyserEtExecuterInterne(session, texte string, rec *Decisi
 		case reponseOui:
 			rec.Moteur = "suggestion"
 			p := sug.propositions[sug.idx]
-			return a.executerMatch(session, p.app, p.texte)
+			msg, verbe, match, isAction, app := a.executerMatch(session, p.app, p.texte)
+			if match && isAction && app != nil {
+				if note := a.suivreConfirmationSuggestion(rec, p.texte, *app, verbe); note != "" && msg != nil {
+					m := messageTexte(texteComplet(msg) + " " + note)
+					msg = &m
+				}
+			}
+			return msg, verbe, match, isAction, app
 		case reponseNon:
 			rec.Moteur = "suggestion"
 			if sug.idx+1 < len(sug.propositions) {
@@ -885,6 +908,41 @@ func (a *Analyseur) TrouverMeilleurMatch(texteNettoye string, estAction bool, do
 	return classement[0].Appareil, classement[0].Score
 }
 
+// motCorrespond vérifie que `mot` (un mot de la phrase dite) correspond à l'un des MOTS de
+// `hay` (nom convivial ou entity_id d'un appareil), en tolérant le pluriel dans les deux sens
+// (« volet » ↔ « volets »). Contrairement à un simple strings.Contains sur toute la chaîne, un
+// mot ne peut jamais se glisser à l'intérieur d'un autre à travers une frontière de mot — ex.
+// « son » ne doit pas correspondre à « maison » (bug réel : « barre de son » se retrouvait à
+// égalité de score avec des entités météo/résumé sans rapport, à cause de « maison »).
+func motCorrespond(hay, mot string) bool {
+	for _, w := range strings.FieldsFunc(hay, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		// Les mots courts (« de », « la »…) sont ignorés pour éviter qu'un mot ne s'y glisse par
+		// préfixe, SAUF s'ils sont purement numériques : « Salon 2 » doit rester trouvable par
+		// « 2 » pour distinguer plusieurs appareils identiques dans la même pièce.
+		if len(w) < 3 && !estToutChiffres(w) {
+			continue
+		}
+		if w == mot || strings.HasPrefix(w, mot) || strings.HasPrefix(mot, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func estToutChiffres(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNettoye, modificateurDemande string, estAction bool) int {
 	nomApp := strings.ToLower(app.FriendlyName)
 	idApp := strings.ToLower(app.EntityID)
@@ -910,7 +968,7 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 			continue
 		}
 
-		if strings.Contains(nomApp, mot) || strings.Contains(idApp, mot) {
+		if motCorrespond(nomApp, mot) || motCorrespond(idApp, mot) {
 			matchPiece := false
 			for _, p := range a.GetPieces() {
 				if strings.EqualFold(p.Name, mot) {
@@ -929,22 +987,29 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 			continue
 		}
 
-		// Fuzzy match : insensible aux accents + tolérance proportionnelle
+		// Fuzzy match : insensible aux accents + tolérance proportionnelle. Réservé aux mots
+		// d'au moins 5 lettres : en dessous, une tolérance d'1 erreur suffit à confondre des mots
+		// courants sans rapport (bug réel : « joue » (jouer) ↔ « jour » dans « jour date », le nom
+		// de l'entité time.date — 1 seule lettre d'écart sur 4 déclenchait le fuzzy match et faisait
+		// gagner time.date sur « joue musique »). Les mots courts restent trouvables par match exact
+		// ou pluriel via motCorrespond, juste pas par tolérance aux fautes.
 		motNorm := text.Normaliser(mot)
-		for _, motHA := range strings.Fields(nomApp) {
-			if len(motHA) < 3 {
-				continue
-			}
-			motHANorm := text.Normaliser(motHA)
-			maxErreurs := len(motNorm) / 4
-			if maxErreurs < 1 {
-				maxErreurs = 1
-			}
-			if text.DistanceLevenshtein(motNorm, motHANorm) <= maxErreurs {
-				score += a.score.BonusFuzzy
-				aMatcheSpecifique = true
-				motsMatches++
-				break
+		if len(motNorm) >= 5 {
+			for _, motHA := range strings.Fields(nomApp) {
+				if len(motHA) < 3 {
+					continue
+				}
+				motHANorm := text.Normaliser(motHA)
+				maxErreurs := len(motNorm) / 4
+				if maxErreurs < 1 {
+					maxErreurs = 1
+				}
+				if text.DistanceLevenshtein(motNorm, motHANorm) <= maxErreurs {
+					score += a.score.BonusFuzzy
+					aMatcheSpecifique = true
+					motsMatches++
+					break
+				}
 			}
 		}
 	}
@@ -992,10 +1057,15 @@ func (a *Analyseur) scorerAppareil(app ha.Appareil, motsSMS []string, texteNetto
 		score -= a.score.MalusActionSansCible
 	}
 
+	// Bonus de couverture exacte : tous les mots du NOM de l'appareil ont été dits, rien ne
+	// manque. S'applique aussi aux noms d'un seul mot (bug réel : une entité nommée d'un seul
+	// mot, ex. « Laveur » ou « Spotify », dite seule ne recevait jamais ce bonus — motsMatches
+	// devait être >= 2 — alors qu'un nom de 2 mots entièrement dit, lui, l'obtenait ; un nom
+	// d'1 mot entièrement dit est tout autant une couverture parfaite).
 	nombreMotsHA := len(strings.Fields(nomApp))
 	if nombreMotsHA > motsMatches {
 		score -= (nombreMotsHA - motsMatches) * a.score.MalusMotSuperflu
-	} else if motsMatches >= 2 && motsMatches == nombreMotsHA {
+	} else if motsMatches >= 1 && motsMatches == nombreMotsHA {
 		score += a.score.BonusCouvertureExacte
 	}
 

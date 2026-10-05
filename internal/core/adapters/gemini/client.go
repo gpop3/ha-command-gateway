@@ -83,12 +83,18 @@ type Reponse struct {
 
 // Enquete : demande qui exige que le code rassemble des faits avant que l'IA les explique.
 type Enquete struct {
-	Sujet string `json:"sujet"` // pourquoi_automatisation | diagnostic_piece | diagnostic_maison | resume | energie | conseil | annuler | notifier | repas | cuisiner | planifier | expliquer | bilan | aide | inventaire
+	Sujet string `json:"sujet"` // pourquoi_automatisation | diagnostic_piece | diagnostic_maison | resume | energie | conseil | annuler | notifier | repas | cuisiner | planifier | expliquer | bilan | aide | inventaire | creer_evenement
 	Piece string `json:"piece,omitempty"`
 	Debut string `json:"debut,omitempty"`
 	Fin   string `json:"fin,omitempty"`
 	// Message : texte à envoyer sur le téléphone (sujet notifier) ; vide = ta dernière réponse.
 	Message string `json:"message,omitempty"`
+	// Cible : à qui/quel appareil envoyer la notification (sujet notifier), UNIQUEMENT si
+	// l'utilisateur a nommé un destinataire précis autre que lui-même (ex. « envoie ça à
+	// Grégory », « préviens Marie », « sur le téléphone de papa ») : mets alors ce nom tel
+	// quel (« Grégory », « Marie », « papa »). Laisse VIDE si l'utilisateur parle de son
+	// propre téléphone (« envoie-moi ça », « sur mon téléphone ») : vide = le téléphone par
+	// défaut, ne devine jamais un nom dans ce cas.
 	Cible string `json:"cible,omitempty"`
 	// Ingredients : ce que l'utilisateur dit avoir sous la main (sujet repas), séparés par des virgules.
 	Ingredients string `json:"ingredients,omitempty"`
@@ -126,14 +132,17 @@ type Tour struct {
 	Reponse string
 }
 
-func New(apiKey, model string) *Client {
+func New(apiKey, model string, timeout time.Duration) *Client {
 	if model == "" {
 		model = "gemini-3.1-flash-lite"
+	}
+	if timeout <= 0 {
+		timeout = 20 * time.Second
 	}
 	return &Client{
 		apiKey:   apiKey,
 		model:    model,
-		http:     &http.Client{Timeout: 8 * time.Second},
+		http:     &http.Client{Timeout: timeout},
 		delaiMin: 2 * time.Second,
 	}
 }
@@ -325,7 +334,14 @@ rappellera ensuite pour que tu les expliques). Renseigne l'objet "enquete" :
   cuisiner ? » : le code cherche dans TOUTES les recettes de Mealie celles qui utilisent ces
   ingrédients ; ingredients = ce que l'utilisateur dit avoir, séparé par des virgules ;
 - sujet="aide" : « que sais-tu faire ? » ;
-- sujet="inventaire" + piece : « que puis-je contrôler dans le salon ? ».
+- sujet="inventaire" + piece : « que puis-je contrôler dans le salon ? » ;
+- sujet="creer_evenement" + message (titre de l'événement, obligatoire) + debut (ISO 8601 AVEC
+  l'heure précise, obligatoire — déduis la date depuis « jeudi », « demain », etc.) + fin
+  (ISO 8601, optionnel : défaut 1h après debut) + piece (optionnel : nom du calendrier si
+  l'utilisateur en a nommé un précis, ex. « sur l'agenda de Marie ») : « ajoute un rendez-vous
+  dentiste jeudi à 15h », « mets une réunion vendredi de 10h à 11h ». N'écrit JAMAIS sur un
+  calendrier de menus (Mealie) — uniquement un agenda personnel. Confirmation orale systématique
+  avant création (c'est persistant).
 
 9) type="speak" : question sur un état ACTUEL visible dans "contexte", ou
 discussion générale sans rapport avec la maison.
@@ -419,6 +435,7 @@ func schemaReponse() map[string]interface{} {
 					"debut":       propriete("STRING"),
 					"fin":         propriete("STRING"),
 					"message":     propriete("STRING"),
+					"cible":       propriete("STRING"),
 					"ingredients": propriete("STRING"),
 					"recette":     propriete("STRING"),
 					"repas":       propriete("STRING"),

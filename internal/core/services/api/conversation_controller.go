@@ -80,7 +80,11 @@ func (c *ConversationController) handleConversation(w http.ResponseWriter, r *ht
 		return
 	}
 
-	logx.InfoT("conversation.recue", req.Text)
+	cid := req.ConversationID
+	if cid == "" {
+		cid = "(vide)"
+	}
+	logx.InfoT("conversation.recue", req.Text, cid)
 
 	res := c.service.Traiter(req.Text, req.ConversationID)
 

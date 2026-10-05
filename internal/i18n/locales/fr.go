@@ -15,7 +15,7 @@ func init() {
 		"ok.action":             "✅ L'ordre a été exécuté sur : %s.",
 		"ok.message":            "✅ %s",
 		"erreur.lecture.parler": "Erreur lecture",
-		"conversation.recue":    "Conversation reçue : %s",
+		"conversation.recue":    "Conversation reçue : %s (conversation_id=%s)",
 
 		// ---- assistant ----
 		"assistant.pret":      "🚀 Assistant prêt (Voix + SMS + Console).",
@@ -172,6 +172,7 @@ func init() {
 		"ha.ws.timeout.attente.cache":                  "⚠️ [WS] timeout attente cache — fallback HTTP",
 		"ha.ws.websocket.indisponible.fallback":        "⚠️ [WS] WebSocket indisponible, fallback HTTP : %v",
 		"log.plugins":                                  "⚠️ plugins : %v",
+		"modem.sms.echo.ignore":                        "🔇 [SMS] écho ignoré (déjà envoyé à %s) : %s",
 		"modem.sms.erreur.contacts.reconnexion":        "⚠️ [SMS] erreur contacts : %v — reconnexion...",
 		"modem.sms.erreur.contenu.contactid":           "⚠️ [SMS] erreur contenu contactID=%d : %v — reconnexion...",
 		"modem.sms.reconnexion.echouee":                "⚠️ [SMS] reconnexion échouée : %v",
@@ -619,6 +620,16 @@ func init() {
 		"notification.plusieurs":      "📱 Plusieurs applications mobiles (%s) : utilisation de %s (voir NOTIFY_SERVICE)",
 		"notification.cible.introuvable": "📱 Destinataire de notification « %s » non identifié parmi les applications mobiles connues : utilisation du téléphone par défaut",
 		"gemini.notification.erreur":  "⚠️ Notification mobile impossible : %v",
+
+		// ---- « Ajoute un rendez-vous… » : écriture dans un calendrier HA ----
+		"agenda.creation.titre.manquant":     "Je n'ai pas compris le titre du rendez-vous.",
+		"agenda.creation.date.incomprise":    "Je n'ai pas compris la date ou l'heure du rendez-vous.",
+		"agenda.creation.calendrier.absent":  "Je ne trouve aucun agenda où ajouter ce rendez-vous.",
+		"agenda.creation.calendrier.ambigu":  "Plusieurs agendas existent : dis-moi lequel (par son nom).",
+		"agenda.creation.resume":             "ajouter « %s » %s",
+		"agenda.creation.ok":                 "C'est noté : « %s » %s.",
+		"agenda.creation.echec":              "Je n'ai pas pu ajouter ce rendez-vous.",
+
 		"publication.erreur":          "⚠️ Publication dans Home Assistant impossible : %v",
 		"briefing.demain":             "Demain au menu : %s.",
 		"cuisiner.non.configure":  "Pour chercher dans toutes tes recettes, il me faut l'adresse et le jeton de Mealie (MEALIE_URL et MEALIE_TOKEN).",
@@ -649,6 +660,7 @@ func init() {
 		"suggestion.autre":     "Alors : %s ?",
 		"suggestion.abandon":   "D'accord, laisse tomber.",
 		"suggestion.etat":      "l'état de %s",
+		"suggestion.apprise":   "D'ailleurs, comme tu me le redis souvent, je retiens cette phrase pour %s : plus besoin de confirmer la prochaine fois.",
 		"confirmation.oubli":   "effacer le journal des échanges, ce que j'ai appris et nos conversations",
 		"oubli.fait":           "C'est fait : j'ai tout oublié.",
 		"annulation.notification": "la notification",

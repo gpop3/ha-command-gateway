@@ -101,6 +101,7 @@ type Config struct {
 	GeminiModel   string
 	GeminiAPIKey  string
 	GeminiDebug   bool // journalise le contexte envoyé à l'IA et sa réponse brute (niveau INFO)
+	GeminiTimeoutS int // délai max (secondes) d'attente d'une réponse Gemini (gros contextes = plus long)
 
 	// Réduction du contexte envoyé à l'IA
 	GeminiPreselection bool // false = tout le contexte HA est envoyé à chaque appel
@@ -245,6 +246,7 @@ func Load() *Config {
 		GeminiPrimary: getEnv("GEMINI_PRIMARY", "false") == "true",
 		GeminiModel:   getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite"),
 		GeminiAPIKey:  getEnv("GEMINI_API_KEY", ""),
+		GeminiTimeoutS: getEnvInt("GEMINI_TIMEOUT_S", 20),
 		GeminiDebug:   getEnv("GEMINI_DEBUG", "false") == "true",
 
 		GeminiPreselection:    getEnv("GEMINI_PRESELECTION", "true") == "true",
