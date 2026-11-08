@@ -38,7 +38,7 @@ type SMS struct {
 
 const (
 	intervalleLecture = 10 * time.Second
-	ageMaxSMS         = 5 * time.Minute // un SMS plus vieux n'est pas exécuté
+	ageMaxMessage     = 5 * time.Minute // un SMS plus vieux n'est pas exécuté
 	delaiConcat       = 3 * time.Minute // délai max d'attente des parties manquantes
 	maxTentatives     = 3
 )
@@ -454,7 +454,7 @@ func (c *Client) livrer(ctx context.Context, numero, texte string, date time.Tim
 	if strings.TrimSpace(texte) == "" {
 		return
 	}
-	if !date.IsZero() && c.maintenant().Sub(date) > ageMaxSMS {
+	if !date.IsZero() && c.maintenant().Sub(date) > ageMaxMessage {
 		logx.InfoT("modem.sms.trop.ancien", numero, texte)
 		return
 	}

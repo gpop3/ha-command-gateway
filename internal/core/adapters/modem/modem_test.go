@@ -216,13 +216,13 @@ func (f *faux) traiter(cmd string) {
 		var sb strings.Builder
 		for i := 0; i < 50; i++ {
 			if pdu, ok := f.stockes[i]; ok {
-				fmt.Fprintf(&sb, "\r\n+CMGL: %d,0,,%d\r\n%s", i, len(pdu)/2-1, pdu)
+				sb.WriteString(fmt.Sprintf("\r\n+CMGL: %d,0,,%d\r\n%s", i, len(pdu)/2-1, pdu))
 			}
 		}
 		f.repondre(sb.String() + "\r\n\r\nOK\r\n")
 	case strings.HasPrefix(cmd, "AT+CMGD="):
 		var i int
-		fmt.Sscanf(cmd, "AT+CMGD=%d", &i)
+		_, _ = fmt.Sscanf(cmd, "AT+CMGD=%d", &i)
 		delete(f.stockes, i)
 		f.repondre("\r\nOK\r\n")
 	default:
