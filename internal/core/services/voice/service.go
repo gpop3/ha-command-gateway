@@ -198,7 +198,7 @@ func (s *Service) traiter(inputText string) {
 func (s *Service) executer(inputText string, muteEnCasDerreur bool) bool {
 	reponse, verbe, match, isAction, appareil := s.analyseur.AnalyserEtExecuter("voix", inputText)
 	switch {
-	case appareil == nil || reponse == nil:
+	case reponse == nil:
 		if match {
 			s.Parler("assistant.retour.erreur")
 		} else {
@@ -206,7 +206,8 @@ func (s *Service) executer(inputText string, muteEnCasDerreur bool) bool {
 				s.Parler("assistant.retour.pas.compris")
 			}
 		}
-	case isAction:
+	// (une réponse sans appareil = réponse parlée de l'IA : elle est lue telle quelle)
+	case isAction && appareil != nil:
 		s.Parler("assistant.retour.action", verbe, appareil.FriendlyName)
 	default:
 		s.Parler(reponse.Voix.Texte, reponse.Voix.Params...)

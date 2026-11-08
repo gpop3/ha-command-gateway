@@ -26,7 +26,7 @@ RUN wget -q https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-
     && ldconfig \
     && rm -rf vosk-linux-aarch64-0.3.45*
 
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 COPY --from=deps /usr/local/lib/libvosk.so /usr/local/lib/
 COPY --from=deps /usr/local/include/vosk_api.h /usr/local/include/
@@ -53,7 +53,7 @@ RUN mkdir -p /opt/vosk-model && \
 WORKDIR /app
 
 ENV ALSA_DEVICE=plughw:CARD=Bar,DEV=0
-ENV GSM_PORT=/dev/ttyUSB0
+ENV GSM_PORT=/dev/ttyUSB1
 
 ENV VOSK_MODEL_PATH=/opt/vosk-model
 ENV VOSK_MODEL_NAME=vosk-model-small-fr-0.22
@@ -68,5 +68,9 @@ ENV PIPER_SERVER_MODEL_NAME=fr_FR-siwis-medium
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Sonde de vie : la boucle de traitement répond-elle ? (nécessite ACTIVE_SERVER_HTTP=true)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${API_PORT:-8080}/health" || exit 1
 
 ENTRYPOINT ["entrypoint.sh"]

@@ -23,7 +23,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Install dependencies
@@ -33,6 +33,10 @@ jobs:
         run: |
           go clean -cache
           go vet -tags nvosk ./...
+
+      - name: Test
+        run: go test -tags nvosk -count=1 -v ./...
+        continue-on-error: true
 
       - name: staticcheck
         uses: dominikh/staticcheck-action@v1
@@ -73,7 +77,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Install dependencies
