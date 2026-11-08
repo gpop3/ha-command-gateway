@@ -206,7 +206,9 @@ aucune dépendance circulaire avec `nlp`.
 
 ## Prérequis
 
-- **Go 1.25+** (le module cible `go 1.25.0`).
+- **Go 1.25+** (le module cible `go 1.25.0`) ; la CI et l'image Docker
+  compilent en **Go 1.26** pour avoir les correctifs de sécurité de la
+  bibliothèque standard.
 - **ffmpeg** (capture micro) et **alsa-utils** (`aplay`, lecture audio) pour la
   voix.
 - **Piper** (TTS) — lancé en serveur HTTP local.

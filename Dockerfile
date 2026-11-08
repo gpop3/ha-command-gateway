@@ -26,7 +26,7 @@ RUN wget -q https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-
     && ldconfig \
     && rm -rf vosk-linux-aarch64-0.3.45*
 
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 COPY --from=deps /usr/local/lib/libvosk.so /usr/local/lib/
 COPY --from=deps /usr/local/include/vosk_api.h /usr/local/include/
