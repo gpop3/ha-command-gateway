@@ -216,7 +216,7 @@ func (f *faux) traiter(cmd string) {
 		var sb strings.Builder
 		for i := 0; i < 50; i++ {
 			if pdu, ok := f.stockes[i]; ok {
-				sb.WriteString(fmt.Sprintf("\r\n+CMGL: %d,0,,%d\r\n%s", i, len(pdu)/2-1, pdu))
+				_, _ = fmt.Fprintf(&sb, "\r\n+CMGL: %d,0,,%d\r\n%s", i, len(pdu)/2-1, pdu)
 			}
 		}
 		f.repondre(sb.String() + "\r\n\r\nOK\r\n")
