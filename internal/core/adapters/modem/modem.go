@@ -1,42 +1,66 @@
 package modem
 
+// Client pour modem 4G piloté en commandes AT (SIMCom A7670E Cat-1 HAT,
+// compatible SIM7600 et la plupart des modules 3GPP). Les SMS sont
+// échangés en mode PDU : accents (UCS2) et SMS longs (concaténés) gérés.
+
 import (
-	"bytes"
-	"cmp"
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
-	"ha-command-gateway/internal/i18n"
-	"ha-command-gateway/internal/logx"
 	"io"
-	"net/http"
-	"net/http/cookiejar"
-	"net/url"
+	"math/rand/v2"
+	"regexp"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"ha-command-gateway/internal/i18n"
+	"ha-command-gateway/internal/logx"
 )
 
-// Client gère la connexion au modem TCL LinkKey IK41 via HTTP
-type Client struct {
-	http        *http.Client
-	jar         *cookiejar.Jar
-	baseURL     string
-	modemURL    *url.URL
-	verifKey    string
-	freeKey     string
-	hmacKey     string
-	xorKey      string
-	loginToken  string
-	password    string
-	whitelist   []string
-	sessionKey  string // clé de chiffrement post-login (formatStr(pbkdf2password))
-	derniersLus map[string]bool
+// Config regroupe les paramètres du modem.
+type Config struct {
+	Port      string // ex: /dev/ttyUSB1 (USB) ou /dev/serial0 (UART du HAT)
+	Baud      int    // ignoré en USB, 115200 par défaut sur l'UART
+	PIN       string // code PIN de la SIM (vide si désactivé)
+	Whitelist string // numéros autorisés, séparés par des virgules
+}
 
-	// echoMu/recemmentEnvoyes : garde-fou contre l'écho d'un SMS qu'on vient d'envoyer, relu
-	// comme reçu avant que le modem ait fini de marquer son SMSType à 2 (sent). Observé en
-	// pratique : la relecture tronque parfois les caractères multi-octets (emoji) du contenu,
-	// d'où la comparaison par préfixe plutôt que l'égalité stricte dans estEcho.
+// SMS représente un message reçu
+type SMS struct {
+	Numero  string
+	Message string
+}
+
+const (
+	intervalleLecture = 10 * time.Second
+	ageMaxSMS         = 5 * time.Minute // un SMS plus vieux n'est pas exécuté
+	delaiConcat       = 3 * time.Minute // délai max d'attente des parties manquantes
+	maxTentatives     = 3
+)
+
+// Client gère la connexion au modem.
+type Client struct {
+	cfg       Config
+	whitelist []string
+	ouvrir    func() (io.ReadWriteCloser, error)
+
+	mu        sync.Mutex // un seul échange AT à la fois
+	port      *atPort
+	pinRefuse bool
+	ref       byte
+
+	parties    map[string]*smsLong
+	maintenant func() time.Time
+
+	// Garde-fou anti-écho : un SMS qu'on vient d'envoyer, relu comme reçu
+	// (ex. alerte envoyée au numéro de la SIM elle-même), ne doit pas être
+	// exécuté comme une commande. Comparaison par préfixe : la relecture peut
+	// tronquer les caractères multi-octets (emoji).
 	echoMu           sync.Mutex
 	recemmentEnvoyes map[string][]smsEnvoye
 }
@@ -48,30 +72,429 @@ type smsEnvoye struct {
 
 const fenetreEcho = 2 * time.Minute
 
-// marquerEnvoye enregistre un SMS qu'on vient d'envoyer, pour pouvoir reconnaître son écho.
+type smsLong struct {
+	numero   string
+	total    int
+	morceaux map[int]string
+	date     time.Time
+	vuLe     time.Time
+}
+
+// New crée un client et initialise le modem.
+func New(cfg Config) (*Client, error) {
+	if cfg.Baud == 0 {
+		cfg.Baud = 115200
+	}
+	c := nouveauClient(cfg, func() (io.ReadWriteCloser, error) { return ouvrirSerie(cfg.Port, cfg.Baud) })
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.connecter(); err != nil {
+		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.modem.connexion", cfg.Port), err)
+	}
+	return c, nil
+}
+
+func nouveauClient(cfg Config, ouvrir func() (io.ReadWriteCloser, error)) *Client {
+	var wl []string
+	for _, n := range strings.Split(cfg.Whitelist, ",") {
+		if n = normaliserNumero(n); n != "" {
+			wl = append(wl, n)
+		}
+	}
+	return &Client{
+		cfg:              cfg,
+		whitelist:        wl,
+		ouvrir:           ouvrir,
+		ref:              byte(rand.IntN(256)),
+		parties:          map[string]*smsLong{},
+		maintenant:       time.Now,
+		recemmentEnvoyes: map[string][]smsEnvoye{},
+	}
+}
+
+// Fermer libère le port série.
+func (c *Client) Fermer() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.port != nil {
+		c.port.fermer()
+		c.port = nil
+	}
+}
+
+// ---- Connexion / initialisation ----
+
+// connecter ouvre le port et prépare le modem. Appelé avec c.mu verrouillé.
+func (c *Client) connecter() error {
+	if c.port != nil {
+		c.port.fermer()
+		c.port = nil
+	}
+	rw, err := c.ouvrir()
+	if err != nil {
+		return err
+	}
+	p := nouveauATPort(rw)
+	if err := c.initialiser(p); err != nil {
+		p.fermer()
+		return err
+	}
+	c.port = p
+	return nil
+}
+
+func (c *Client) initialiser(p *atPort) error {
+	// Synchronisation : le module peut être en train de démarrer.
+	var err error
+	for range 5 {
+		if _, err = p.commande("AT", 2*time.Second); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("%s : %w", i18n.T("erreur.modem.muet"), err)
+	}
+	_, _ = p.commande("ATE0", 2*time.Second)      // pas d'écho
+	_, _ = p.commande("AT+CMEE=2", 2*time.Second) // erreurs détaillées
+
+	if err := c.deverrouillerSIM(p); err != nil {
+		return err
+	}
+
+	// Mode PDU ; la SIM peut mettre quelques secondes à être prête pour les SMS.
+	for i := range 10 {
+		if _, err = p.commande("AT+CMGF=0", 5*time.Second); err == nil {
+			break
+		}
+		if estErreurTransport(err) {
+			return err
+		}
+		if i < 9 {
+			time.Sleep(2 * time.Second)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("%s : %w", i18n.T("erreur.modem.sms.init"), err)
+	}
+
+	// Notification « +CMTI » à chaque nouveau SMS stocké (lecture immédiate).
+	if _, err := p.commande("AT+CNMI=2,1,0,0,0", 5*time.Second); err != nil {
+		logx.WarnT("modem.cnmi.refuse", err)
+	}
+
+	c.journaliserReseau(p)
+	return nil
+}
+
+func (c *Client) deverrouillerSIM(p *atPort) error {
+	var etat string
+	for i := range 10 {
+		lignes, err := p.commande("AT+CPIN?", 5*time.Second)
+		if err == nil {
+			etat = strings.TrimSpace(strings.TrimPrefix(premiere(lignes, "+CPIN:"), "+CPIN:"))
+			break
+		}
+		if estErreurTransport(err) {
+			return err
+		}
+		if i == 9 { // SIM absente, mal insérée…
+			return fmt.Errorf("%s : %w", i18n.T("erreur.modem.sim"), err)
+		}
+		time.Sleep(time.Second)
+	}
+
+	switch etat {
+	case "READY":
+		return nil
+	case "SIM PIN":
+		if c.cfg.PIN == "" {
+			return fmt.Errorf("%s", i18n.T("erreur.modem.pin.requis"))
+		}
+		if c.pinRefuse { // ne jamais réessayer un PIN refusé : risque de bloquer la SIM
+			return fmt.Errorf("%s", i18n.T("erreur.modem.pin.refuse"))
+		}
+		if _, err := p.commande(fmt.Sprintf("AT+CPIN=%q", c.cfg.PIN), 10*time.Second); err != nil {
+			if !estErreurTransport(err) {
+				c.pinRefuse = true
+			}
+			return fmt.Errorf("%s : %w", i18n.T("erreur.modem.pin.refuse"), err)
+		}
+		logx.InfoT("modem.pin.ok")
+		time.Sleep(3 * time.Second) // le module charge la SIM (« SMS DONE »)
+		return nil
+	default:
+		return fmt.Errorf("%s", i18n.T("erreur.modem.sim.etat", etat))
+	}
+}
+
+func (c *Client) journaliserReseau(p *atPort) {
+	signal := "?"
+	if l, err := p.commande("AT+CSQ", 3*time.Second); err == nil {
+		signal = strings.TrimSpace(strings.TrimPrefix(premiere(l, "+CSQ:"), "+CSQ:"))
+	}
+	operateur := "?"
+	if l, err := p.commande("AT+COPS?", 5*time.Second); err == nil {
+		operateur = strings.TrimSpace(strings.TrimPrefix(premiere(l, "+COPS:"), "+COPS:"))
+	}
+	logx.InfoT("modem.pret", c.cfg.Port, operateur, signal)
+}
+
+func premiere(lignes []string, prefixe string) string {
+	for _, l := range lignes {
+		if strings.HasPrefix(l, prefixe) {
+			return l
+		}
+	}
+	return ""
+}
+
+// executer lance fn sur le port, en le (ré)ouvrant si nécessaire.
+// Une erreur de transport ferme le port : le prochain appel reconnectera.
+func (c *Client) executer(fn func(p *atPort) error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.port == nil {
+		if err := c.connecter(); err != nil {
+			return err
+		}
+		logx.InfoT("modem.reconnecte")
+	}
+	err := fn(c.port)
+	if err != nil && estErreurTransport(err) {
+		c.port.fermer()
+		c.port = nil
+	}
+	return err
+}
+
+// ---- Envoi ----
+
+// EnvoyerSMS envoie un SMS (découpé en plusieurs parties si nécessaire).
+func (c *Client) EnvoyerSMS(numero, message string) error {
+	c.mu.Lock()
+	c.ref++
+	ref := c.ref
+	c.mu.Unlock()
+
+	// Marqué avant l'envoi : l'écho peut arriver pendant l'attente de confirmation.
+	c.marquerEnvoye(numero, message)
+
+	parties, err := encoderSubmit(normaliserNumero(numero), message, ref)
+	if err != nil {
+		return fmt.Errorf("%s : %w", i18n.T("erreur.modem.encodage"), err)
+	}
+
+	for _, partie := range parties {
+		var errEnvoi error
+		for tentative := range maxTentatives {
+			errEnvoi = c.executer(func(p *atPort) error {
+				_, err := p.envoyerPDU(partie.Longueur, partie.Hex, 60*time.Second)
+				return err
+			})
+			if errEnvoi == nil {
+				break
+			}
+			if tentative < maxTentatives-1 {
+				time.Sleep(time.Duration(1<<tentative) * time.Second)
+			}
+		}
+		if errEnvoi != nil {
+			return fmt.Errorf("%s : %w", i18n.T("erreur.modem.sendsms.tentatives", maxTentatives), errEnvoi)
+		}
+	}
+	logx.InfoT("sms.envoye", numero, message)
+	return nil
+}
+
+// ---- Réception ----
+
+var reCMGL = regexp.MustCompile(`^\+CMGL:\s*(\d+)\s*,\s*(\d+)`)
+
+type entreeSIM struct {
+	index int
+	etat  int
+	pdu   string
+}
+
+// EcouterSMS lit les SMS reçus (à chaque notification et toutes les 10 s),
+// les supprime de la SIM et envoie ceux des numéros autorisés sur canal.
+func (c *Client) EcouterSMS(ctx context.Context, canal chan<- SMS) {
+	ticker := time.NewTicker(intervalleLecture)
+	defer ticker.Stop()
+
+	for {
+		c.relever(ctx, canal)
+
+		var urc <-chan string
+		c.mu.Lock()
+		if c.port != nil {
+			urc = c.port.urc
+		}
+		c.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-urc:
+			time.Sleep(500 * time.Millisecond) // laisse arriver les autres parties
+		}
+	}
+}
+
+func (c *Client) relever(ctx context.Context, canal chan<- SMS) {
+	var entrees []entreeSIM
+	err := c.executer(func(p *atPort) error {
+		lignes, err := p.commande("AT+CMGL=4", 30*time.Second)
+		if err != nil {
+			return err
+		}
+		entrees = analyserCMGL(lignes)
+		for _, e := range entrees {
+			if e.etat > 1 { // brouillons / envoyés : on n'y touche pas
+				continue
+			}
+			if _, err := p.commande(fmt.Sprintf("AT+CMGD=%d", e.index), 10*time.Second); err != nil {
+				logx.WarnT("modem.sms.suppression.echouee.smsid", e.index, err)
+				if estErreurTransport(err) {
+					return err
+				}
+			} else {
+				logx.DebugT("modem.sms.supprime.smsid", e.index)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		logx.WarnT("modem.sms.erreur.lecture.reconnexion", err)
+	}
+
+	for _, e := range entrees {
+		if e.etat > 1 {
+			continue
+		}
+		sms, err := decoderDeliver(e.pdu)
+		if err != nil {
+			if !errors.Is(err, errPasDeliver) {
+				logx.WarnT("modem.sms.pdu.invalide", e.index, err)
+			}
+			continue
+		}
+		c.recevoir(ctx, sms, canal)
+	}
+	c.purgerParties(ctx, canal)
+}
+
+func analyserCMGL(lignes []string) []entreeSIM {
+	var out []entreeSIM
+	for i := 0; i < len(lignes); i++ {
+		m := reCMGL.FindStringSubmatch(lignes[i])
+		if m == nil || i+1 >= len(lignes) {
+			continue
+		}
+		idx, _ := strconv.Atoi(m[1])
+		etat, _ := strconv.Atoi(m[2])
+		i++
+		out = append(out, entreeSIM{index: idx, etat: etat, pdu: lignes[i]})
+	}
+	return out
+}
+
+// recevoir gère la concaténation puis livre le message complet.
+func (c *Client) recevoir(ctx context.Context, sms *smsRecu, canal chan<- SMS) {
+	if sms.Total <= 1 || sms.Ref < 0 {
+		c.livrer(ctx, sms.Numero, sms.Texte, sms.Date, canal)
+		return
+	}
+	cle := fmt.Sprintf("%s/%d/%d", sms.Numero, sms.Ref, sms.Total)
+	long, ok := c.parties[cle]
+	if !ok {
+		long = &smsLong{numero: sms.Numero, total: sms.Total, morceaux: map[int]string{}, date: sms.Date, vuLe: c.maintenant()}
+		c.parties[cle] = long
+	}
+	long.morceaux[sms.Sequence] = sms.Texte
+	if sms.Date.Before(long.date) {
+		long.date = sms.Date
+	}
+	if len(long.morceaux) >= long.total {
+		delete(c.parties, cle)
+		c.livrer(ctx, long.numero, long.assembler(), long.date, canal)
+	}
+}
+
+// purgerParties livre (incomplets) les SMS longs dont des parties n'arrivent jamais.
+func (c *Client) purgerParties(ctx context.Context, canal chan<- SMS) {
+	for cle, long := range c.parties {
+		if c.maintenant().Sub(long.vuLe) > delaiConcat {
+			delete(c.parties, cle)
+			logx.WarnT("modem.sms.incomplet", long.numero, len(long.morceaux), long.total)
+			c.livrer(ctx, long.numero, long.assembler(), long.date, canal)
+		}
+	}
+}
+
+func (l *smsLong) assembler() string {
+	seqs := make([]int, 0, len(l.morceaux))
+	for s := range l.morceaux {
+		seqs = append(seqs, s)
+	}
+	sort.Ints(seqs)
+	var sb strings.Builder
+	for _, s := range seqs {
+		sb.WriteString(l.morceaux[s])
+	}
+	return sb.String()
+}
+
+func (c *Client) livrer(ctx context.Context, numero, texte string, date time.Time, canal chan<- SMS) {
+	if !c.autorise(numero) {
+		logx.InfoT("modem.sms.recu.un.numero", numero, texte)
+		return
+	}
+	if strings.TrimSpace(texte) == "" {
+		return
+	}
+	if !date.IsZero() && c.maintenant().Sub(date) > ageMaxSMS {
+		logx.InfoT("modem.sms.trop.ancien", numero, texte)
+		return
+	}
+	if c.estEcho(numero, texte) {
+		logx.InfoT("modem.sms.echo.ignore", numero, texte)
+		return
+	}
+	logx.InfoT("sms.recu", numero, texte)
+	select {
+	case canal <- SMS{Numero: numero, Message: strings.ToLower(texte)}:
+	case <-ctx.Done():
+	}
+}
+
+// ---- Anti-écho ----
+
+func cleEcho(numero string) string {
+	n := normaliserNumero(numero)
+	if len(n) > 9 {
+		return n[len(n)-9:]
+	}
+	return n
+}
+
+// marquerEnvoye enregistre un SMS envoyé pour pouvoir reconnaître son écho.
 func (c *Client) marquerEnvoye(numero, message string) {
 	c.echoMu.Lock()
 	defer c.echoMu.Unlock()
-	if c.recemmentEnvoyes == nil {
-		c.recemmentEnvoyes = make(map[string][]smsEnvoye)
-	}
-	maintenant := time.Now()
-	liste := c.recemmentEnvoyes[numero]
-	liste = append(liste, smsEnvoye{contenu: message, envoye: maintenant})
-	// Ménage : ne garder que les envois récents, pour ne pas accumuler indéfiniment.
-	var purgee []smsEnvoye
-	for _, e := range liste {
+	maintenant := c.maintenant()
+	cle := cleEcho(numero)
+	var gardes []smsEnvoye
+	for _, e := range append(c.recemmentEnvoyes[cle], smsEnvoye{contenu: message, envoye: maintenant}) {
 		if maintenant.Sub(e.envoye) < fenetreEcho {
-			purgee = append(purgee, e)
+			gardes = append(gardes, e)
 		}
 	}
-	c.recemmentEnvoyes[numero] = purgee
+	c.recemmentEnvoyes[cle] = gardes
 }
 
-// estEcho indique si `contenu` (un message qu'on vient de "recevoir" de `numero`) est en fait
-// l'écho d'un SMS qu'on a nous-mêmes envoyé à ce numéro il y a peu. Comparaison par préfixe,
-// insensible aux espaces de bord, car la relecture du modem peut tronquer les caractères
-// multi-octets (emoji) en fin de message.
+// estEcho indique si contenu, reçu de numero, est l'écho d'un SMS qu'on lui a envoyé il y a peu.
 func (c *Client) estEcho(numero, contenu string) bool {
 	c.echoMu.Lock()
 	defer c.echoMu.Unlock()
@@ -79,8 +502,8 @@ func (c *Client) estEcho(numero, contenu string) bool {
 	if contenu == "" {
 		return false
 	}
-	maintenant := time.Now()
-	for _, e := range c.recemmentEnvoyes[numero] {
+	maintenant := c.maintenant()
+	for _, e := range c.recemmentEnvoyes[cleEcho(numero)] {
 		if maintenant.Sub(e.envoye) >= fenetreEcho {
 			continue
 		}
@@ -92,441 +515,27 @@ func (c *Client) estEcho(numero, contenu string) bool {
 	return false
 }
 
-// SMS représente un message reçu
-type SMS struct {
-	Numero  string
-	Message string
-}
+// ---- Numéros ----
 
-// New crée un client et se connecte au modem
-func New(baseURL, password, verifKey, xorKey, freeKey, hmacKey, whitelist string) (*Client, error) {
-	jar, _ := cookiejar.New(nil)
-	modemURL, _ := url.Parse(baseURL)
-
-	c := &Client{
-		http:        &http.Client{Timeout: 15 * time.Second, Jar: jar},
-		jar:         jar,
-		baseURL:     baseURL + "/jrd/webapi",
-		modemURL:    modemURL,
-		xorKey:      xorKey,
-		verifKey:    verifKey,
-		freeKey:     freeKey,
-		hmacKey:     hmacKey,
-		whitelist:   strings.Split(whitelist, ","),
-		derniersLus: make(map[string]bool),
-		password:    password,
-	}
-
-	if err := c.login(); err != nil {
-		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.modem.connexion"), err)
-	}
-	return c, nil
-}
-
-// ---- Authentification ----
-
-func (c *Client) login() error {
-	// Initialiser le cookie à "null" pour le premier appel
-	c.setToken("null")
-
-	// 1. Récupérer le Salt
-	deviceSt, err := c.call("GetDeviceSt", nil)
-	if err != nil {
-		return fmt.Errorf("%s : %w", i18n.T("erreur.modem.getdevicest"), err)
-	}
-	salt, _ := deviceSt["Salt"].(string)
-
-	// 2. Préparer les credentials
-	pwHash := pbkdf2Password(c.password, salt)
-	params := map[string]interface{}{
-		"UserName": xorEncrypt("admin", c.xorKey),
-		"Password": pwHash,
-	}
-
-	// 3. Login — ForceLogin si session existante
-	result, err := c.call("Login", params)
-	if err != nil {
-		result, err = c.call("ForceLogin", params)
-		if err != nil {
-			return fmt.Errorf("%s : %w", i18n.T("erreur.modem.login"), err)
+// normaliserNumero retire espaces/points/tirets et convertit 00 → +.
+func normaliserNumero(n string) string {
+	n = strings.Map(func(r rune) rune {
+		if r == ' ' || r == '.' || r == '-' {
+			return -1
 		}
+		return r
+	}, strings.TrimSpace(n))
+	if strings.HasPrefix(n, "00") {
+		n = "+" + n[2:]
 	}
-
-	token, ok := result["token"].(string)
-	if !ok || token == "" {
-		return fmt.Errorf("%s", i18n.T("erreur.modem.token.absent", result))
-	}
-
-	c.setToken(token)
-
-	// Clé de session = formatStr(pbkdf2password) — utilisée pour les APIs non-free
-	// formatStr = swap des deux moitiés de la string
-	c.sessionKey = formatStr(pwHash)
-	return nil
+	return n
 }
 
-// setToken met à jour le token dans le client et le cookie jar
-func (c *Client) setToken(token string) {
-	c.loginToken = token
-	c.jar.SetCookies(c.modemURL, []*http.Cookie{
-		{Name: "loginToken", Value: token, Path: "/"},
+// autorise compare les 9 derniers chiffres pour accepter indifféremment
+// 06 12 34 56 78 et +33612345678 dans la whitelist.
+func (c *Client) autorise(numero string) bool {
+	n := normaliserNumero(numero)
+	return slices.ContainsFunc(c.whitelist, func(w string) bool {
+		return w == n || (len(w) >= 9 && len(n) >= 9 && w[len(w)-9:] == n[len(n)-9:])
 	})
-}
-
-// ---- SMS ----
-
-// EnvoyerSMS envoie un SMS au numéro donné
-func (c *Client) EnvoyerSMS(numero, message string) error {
-	const maxRetries = 3
-
-	// Marqué AVANT l'envoi (pas après confirmation) : la relecture-écho peut survenir pendant
-	// même la fenêtre d'attente de confirmation (GetSendSMSResult), pas seulement après.
-	c.marquerEnvoye(numero, message)
-
-	var sendErr error
-	for attempt := range maxRetries {
-		_, sendErr = c.call("SendSMS", map[string]interface{}{
-			"SMSId":       -1,
-			"SMSContent":  message,
-			"PhoneNumber": numero,
-			"SMSTime":     time.Now().Format("2006-01-02 15:04:05"),
-		})
-		if sendErr == nil {
-			break
-		}
-		if attempt < maxRetries-1 {
-			time.Sleep(time.Duration(1<<attempt) * time.Second)
-		}
-	}
-	if sendErr != nil {
-		return fmt.Errorf("%s : %w", i18n.T("erreur.modem.sendsms.tentatives", maxRetries), sendErr)
-	}
-
-	for i := 0; i < 10; i++ {
-		time.Sleep(1 * time.Second)
-		result, err := c.call("GetSendSMSResult", nil)
-		if err != nil {
-			break
-		}
-		status, _ := result["SendStatus"].(float64)
-		if status == 2 {
-			break
-		}
-		if status == 5 { // SMS_SEND_STATUS_FAILED
-			return fmt.Errorf("%s", i18n.T("erreur.modem.envoi.echoue"))
-		}
-	}
-	logx.InfoT("sms.envoye", numero, message)
-	return nil
-}
-
-func parseSMSTime(s string) time.Time {
-	t, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.Local)
-	if err != nil {
-		return time.Time{}
-	}
-	return t
-}
-
-func (c *Client) supprimerSMS(contactID, smsID int) bool {
-	_, err := c.call("DeleteSMS", map[string]interface{}{
-		"DelFlag":   2,
-		"ContactId": contactID,
-		"SMSId":     smsID,
-	})
-	if err != nil {
-		logx.WarnT("modem.sms.suppression.echouee.smsid", smsID, err)
-		return false
-	} else {
-		logx.InfoT("modem.sms.supprime.smsid", smsID)
-		return true
-	}
-}
-
-func (c *Client) EcouterSMS(canal chan<- SMS) {
-	dejaTraite := map[int]map[float64]struct{}{}
-
-	for {
-		time.Sleep(10 * time.Second)
-
-		contacts, err := c.getSMSContacts()
-		if err != nil {
-			logx.WarnT("modem.sms.erreur.contacts.reconnexion", err)
-			if loginErr := c.login(); loginErr != nil {
-				logx.WarnT("modem.sms.reconnexion.echouee", loginErr)
-			}
-			continue
-		}
-
-		for _, contact := range contacts {
-			contactID, _ := contact["ContactId"].(float64)
-			cid := int(contactID)
-
-			messages, err := c.getSMSContent(cid)
-			if err != nil {
-				logx.WarnT("modem.sms.erreur.contenu.contactid", cid, err)
-				if loginErr := c.login(); loginErr != nil {
-					logx.WarnT("modem.sms.reconnexion.echouee.2", loginErr)
-				}
-				continue
-			}
-
-			if len(messages) == 0 {
-				continue
-			}
-
-			var numero string
-			switch v := contact["PhoneNumber"].(type) {
-			case []interface{}:
-				if len(v) > 0 {
-					numero, _ = v[0].(string)
-				}
-			case string:
-				numero = v
-			}
-
-			numeroConnu := slices.Contains(c.whitelist, numero)
-
-			dernier := slices.MaxFunc(messages, func(a, b map[string]interface{}) int {
-				idA, _ := a["SMSId"].(float64)
-				idB, _ := b["SMSId"].(float64)
-				return cmp.Compare(idA, idB)
-			})
-			dernierSMSID, _ := dernier["SMSId"].(float64)
-
-			if dejaTraite[cid] == nil {
-				dejaTraite[cid] = map[float64]struct{}{}
-			}
-
-			idsActuels := map[float64]struct{}{}
-
-			for _, msg := range messages {
-				smsID, _ := msg["SMSId"].(float64)
-				smsType, _ := msg["SMSType"].(float64)
-				smsTime, _ := msg["SMSTime"].(string)
-				contenu, _ := msg["SMSContent"].(string)
-
-				estLeDernier := smsID == dernierSMSID
-				idsActuels[smsID] = struct{}{}
-
-				if _, ok := dejaTraite[cid][smsID]; !ok {
-					// smsType != 2 exclut en théorie les SMS envoyés, mais le modem peut encore
-					// renvoyer un SMS qu'on vient juste d'envoyer avec ce flag pas encore à jour
-					// (ex. réel : alerte envoyée à un numéro, relue comme reçue de ce même numéro
-					// dans les secondes qui suivent, avec l'émoji tronqué par l'encodage SMS —
-					// l'IA tentait alors d'« exécuter » sa propre alerte comme une commande).
-					// estEcho() rattrape ce cas en comparant au contenu qu'on vient d'envoyer.
-					if smsType != 2 && numeroConnu && contenu != "" && time.Since(parseSMSTime(smsTime)) < 5*time.Minute {
-						if c.estEcho(numero, contenu) {
-							logx.InfoT("modem.sms.echo.ignore", numero, contenu)
-						} else {
-							logx.InfoT("sms.recu", numero, contenu)
-							canal <- SMS{
-								Numero:  numero,
-								Message: strings.ToLower(contenu),
-							}
-						}
-					}
-
-					if !numeroConnu {
-						logx.InfoT("modem.sms.recu.un.numero", numero, contenu)
-					}
-				}
-
-				if !estLeDernier {
-					if !c.supprimerSMS(cid, int(smsID)) {
-						dejaTraite[cid][smsID] = struct{}{}
-					} else {
-						delete(dejaTraite[cid], smsID)
-					}
-				} else {
-					dejaTraite[cid][smsID] = struct{}{}
-				}
-			}
-		}
-	}
-}
-
-// ---- Helpers API ----
-
-func (c *Client) getSMSContacts() ([]map[string]interface{}, error) {
-	result, err := c.call("GetSMSContactList", map[string]interface{}{"Page": 1})
-	if err != nil {
-		return nil, err
-	}
-	list, _ := result["SMSContactList"].([]interface{})
-	var contacts []map[string]interface{}
-	for _, item := range list {
-
-		if m, ok := item.(map[string]interface{}); ok {
-			contacts = append(contacts, m)
-		}
-	}
-	return contacts, nil
-}
-
-func (c *Client) getSMSContent(contactID int) ([]map[string]interface{}, error) {
-	result, err := c.call("GetSMSContentList", map[string]interface{}{
-		"Page":      1,
-		"ContactId": contactID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	list, _ := result["SMSContentList"].([]interface{})
-	var messages []map[string]interface{}
-	for _, item := range list {
-		if m, ok := item.(map[string]interface{}); ok {
-			messages = append(messages, m)
-		}
-	}
-	return messages, nil
-}
-
-// freeAPIs = config.freeApis dans config.js — chiffrées avec freeApiKey
-var freeAPIs = map[string]bool{
-	"GetCurrentLanguage": true, "SetLanguage": true, "Login": true,
-	"ForceLogin": true, "Logout": true, "GetAutoValidatePinState": true,
-	"GetConnectionSettings": true, "GetConnectionState": true,
-	"GetDeviceUpgradeState": true, "GetLoginState": true,
-	"GetNetworkInfo": true, "GetSMSStorageState": true,
-	"GetSimStatus": true, "GetSystemStatus": true,
-	"SetCheckNewVersion": true, "getSmsInitState": true,
-	"GetSystemInfo": true, "GetDeviceSt": true,
-	"SetPassWordReset": true, "GetDeviceIdentity": true,
-}
-
-// formatStr = swap des deux moitiés de la string (crypto_utils.formatStr dans sdk.js)
-func formatStr(s string) string {
-	n := len(s)
-	half := n / 2
-	return s[half:] + s[:half]
-}
-
-// methodIDs mappe chaque méthode à son id JSON-RPC (défini dans sdk.js)
-var methodIDs = map[string]string{
-	"Login":              "1.1",
-	"ForceLogin":         "1.6",
-	"Logout":             "1.2",
-	"GetLoginState":      "1.3",
-	"HeartBeat":          "1.5",
-	"GetDeviceSt":        "1.1",
-	"GetSimStatus":       "2.1",
-	"GetConnectionState": "3.1",
-	"GetNetworkInfo":     "4.1",
-	"GetSMSContactList":  "6.2",
-	"GetSMSContentList":  "6.3",
-	"GetSMSStorageState": "6.4",
-	"SendSMS":            "6.6",
-	"DeleteSMS":          "6.5",
-	"GetSMSSettings":     "6.9",
-	"GetSystemInfo":      "13.1",
-	"GetSystemStatus":    "13.4",
-}
-
-func methodID(method string) string {
-	if id, ok := methodIDs[method]; ok {
-		return id
-	}
-	return "1.1"
-}
-
-// encKey get key
-func (c *Client) encKey(method string) string {
-	if freeAPIs[method] || c.sessionKey == "" {
-		return c.freeKey
-	}
-	return c.sessionKey
-}
-
-func (c *Client) call(method string, params map[string]interface{}) (map[string]interface{}, error) {
-	if params == nil {
-		params = map[string]interface{}{}
-	}
-	params["_"] = time.Now().UnixMilli()
-
-	paramsJSON, err := json.Marshal(params)
-	if err != nil {
-		return nil, err
-	}
-
-	// Choisir la clé selon si l'API est "free" ou non (comme dans apiPost du sdk.js)
-	encKey := c.encKey(method)
-
-	encParams, err := aesEncrypt(string(paramsJSON), encKey)
-	if err != nil {
-		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.modem.chiffrement"), err)
-	}
-
-	body, err := json.Marshal(map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  method,
-		"params":  encParams,
-		"id":      methodID(method),
-		"hmac":    computeHmac(string(paramsJSON), c.hmacKey),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", c.baseURL+"?api="+method, bytes.NewBuffer(body))
-	if err != nil {
-		return nil, err
-	}
-
-	baseHost := strings.TrimSuffix(c.baseURL, "/jrd/webapi")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Referer", baseHost+"/index.html")
-	req.Header.Set("Origin", baseHost)
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	req.Header["_TclRequestVerificationKey"] = []string{c.verifKey}
-	req.Header["_TclRequestVerificationToken"] = []string{c.loginToken}
-	req.Header["aVer"] = []string{"2.0"}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			logx.Error(err)
-		}
-	}(resp.Body)
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var data struct {
-		Result interface{} `json:"result"`
-		Error  interface{} `json:"error"`
-	}
-	if err := json.Unmarshal(respBody, &data); err != nil {
-		return nil, fmt.Errorf("%s : %w", i18n.T("erreur.modem.reponse.invalide"), err)
-	}
-
-	if data.Error != nil {
-		return nil, fmt.Errorf("%s", i18n.T("erreur.modem.api", data.Error))
-	}
-
-	switch v := data.Result.(type) {
-	case string:
-		decKey := c.encKey(method)
-		decrypted, err := aesDecrypt(v, decKey)
-		if err != nil {
-			return map[string]interface{}{"raw": v}, nil
-		}
-		var result map[string]interface{}
-		if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
-			return map[string]interface{}{"value": decrypted}, nil
-		}
-		return result, nil
-	case map[string]interface{}:
-		return v, nil
-	default:
-		return map[string]interface{}{}, nil
-	}
 }

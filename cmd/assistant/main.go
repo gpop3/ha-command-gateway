@@ -11,6 +11,7 @@ import (
 
 	"ha-command-gateway/config"
 	"ha-command-gateway/internal/core"
+	"ha-command-gateway/internal/core/adapters/modem"
 	"ha-command-gateway/internal/core/services/api"
 	"ha-command-gateway/internal/core/services/console"
 	"ha-command-gateway/internal/core/services/sms"
@@ -129,13 +130,10 @@ func main() {
 
 	// SMS (fournit le port SMSSender)
 	if cfg.ActiveSms {
-		smsSvc := sms.New(sms.Config{
-			ModemURL:  cfg.ModemURL,
-			Password:  cfg.ModemPassword,
-			VerifKey:  cfg.ModemVerifKey,
-			XorKey:    cfg.ModemXorKey,
-			FreeKey:   cfg.ModemFreeKey,
-			HmacKey:   cfg.ModemHmacKey,
+		smsSvc := sms.New(modem.Config{
+			Port:      cfg.GSMPort,
+			Baud:      cfg.GSMBaud,
+			PIN:       cfg.GSMPin,
 			Whitelist: cfg.Whitelist,
 		}, analyseur, bus)
 		mgr.Register(smsSvc)

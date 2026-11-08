@@ -54,9 +54,8 @@ func init() {
 		"sms.recu":            "📱 SMS reçu de %s : %s",
 		"sms.ecoute":          "📱 Écoute SMS activée.",
 		"sms.envoye":          "📤 SMS envoyé à %s : %s",
-		"sms.indispo.windows": "ℹ️  SMS non disponible sur Windows.",
+		"sms.indispo.windows": "modem SMS disponible uniquement sous Linux (port série)",
 		"sms.reponse":         "Réponse SMS :",
-		"gsm.erreur":          "⚠️ GSM non disponible : %v",
 
 		// ---- Console ----
 		"console.prete": "⌨️ Console prête. Tapez une commande :",
@@ -173,13 +172,9 @@ func init() {
 		"ha.ws.websocket.indisponible.fallback":        "⚠️ [WS] WebSocket indisponible, fallback HTTP : %v",
 		"log.plugins":                                  "⚠️ plugins : %v",
 		"modem.sms.echo.ignore":                        "🔇 [SMS] écho ignoré (déjà envoyé à %s) : %s",
-		"modem.sms.erreur.contacts.reconnexion":        "⚠️ [SMS] erreur contacts : %v — reconnexion...",
-		"modem.sms.erreur.contenu.contactid":           "⚠️ [SMS] erreur contenu contactID=%d : %v — reconnexion...",
-		"modem.sms.reconnexion.echouee":                "⚠️ [SMS] reconnexion échouée : %v",
-		"modem.sms.reconnexion.echouee.2":              "⚠️ [SMS] reconnexion échouée : %v",
 		"modem.sms.recu.un.numero":                     "📱 SMS reçu d'un numéro inconnu %s : %s",
-		"modem.sms.suppression.echouee.smsid":          "⚠️ [SMS] suppression échouée SMSId=%d : %v",
-		"modem.sms.supprime.smsid":                     "✅ [SMS] supprimé SMSId=%d",
+		"modem.sms.suppression.echouee.smsid":          "⚠️ [SMS] suppression échouée (index SIM %d) : %v",
+		"modem.sms.supprime.smsid":                     "🗑️ [SMS] supprimé de la SIM (index %d)",
 		"nlp.catalogue":                                "DEBUG catalogue[0]: %+v",
 		"nlp.domaine":                                  "DEBUG domaine: %+v",
 		"nlp.estaction.domaine":                        "DEBUG estAction=%v domaine=%s\n",
@@ -265,6 +260,25 @@ func init() {
 		"erreur.init.service":       "init %s : %v",
 		"erreur.demarrage.services": "❌ démarrage services : %v",
 
+		// ---- Modem AT (A7670E) ----
+		"erreur.modem.baud":            "vitesse série non supportée : %d",
+		"erreur.modem.termios":         "configuration du port série",
+		"erreur.modem.muet":            "le modem ne répond pas aux commandes AT",
+		"erreur.modem.sim":             "carte SIM non détectée",
+		"erreur.modem.sim.etat":        "SIM non prête (état %q)",
+		"erreur.modem.pin.requis":      "la SIM demande un code PIN : renseigner GSM_PIN",
+		"erreur.modem.pin.refuse":      "code PIN refusé — vérifier GSM_PIN (plus de nouvel essai pour ne pas bloquer la SIM)",
+		"erreur.modem.sms.init":        "passage en mode SMS PDU",
+		"erreur.modem.encodage":        "encodage du SMS",
+		"modem.pin.ok":                 "🔓 [SMS] code PIN accepté",
+		"modem.pret":                   "📶 [SMS] modem prêt sur %s — opérateur %s, signal %s",
+		"modem.reconnecte":             "🔌 [SMS] modem (re)connecté",
+		"modem.cnmi.refuse":            "⚠️ [SMS] notifications de nouveaux SMS refusées (%v) — lecture périodique seule",
+		"modem.sms.erreur.lecture.reconnexion": "⚠️ [SMS] lecture des SMS impossible : %v — reconnexion au prochain cycle",
+		"modem.sms.pdu.invalide":       "⚠️ [SMS] SMS illisible (index SIM %d) : %v",
+		"modem.sms.incomplet":          "⚠️ [SMS] SMS long incomplet de %s (%d/%d parties) — traité tel quel",
+		"modem.sms.trop.ancien":        "⏳ [SMS] SMS ancien ignoré de %s : %s",
+
 		// ---- Erreurs / messages API SMS ----
 		"erreur.modem.indispo":      "modem SMS non disponible",
 		"erreur.numero.requis":      "numéro de téléphone requis",
@@ -277,22 +291,9 @@ func init() {
 		"api.sms.envoye.a":          "SMS envoyé à %s",
 
 		// ---- Erreurs modem ----
-		"erreur.modem.connexion":          "connexion modem TCL",
-		"erreur.modem.getdevicest":        "GetDeviceSt",
-		"erreur.modem.login":              "Login/ForceLogin",
-		"erreur.modem.token.absent":       "token absent de la réponse : %v",
-		"erreur.modem.sendsms.tentatives": "SendSMS après %d tentatives",
-		"erreur.modem.envoi.echoue":       "envoi SMS échoué",
-		"erreur.modem.chiffrement":        "chiffrement",
-		"erreur.modem.reponse.invalide":   "réponse invalide",
-		"erreur.modem.api":                "erreur API : %v",
+		"erreur.modem.connexion":          "connexion modem (%s)",
+		"erreur.modem.sendsms.tentatives": "envoi SMS échoué après %d tentatives",
 
-		// ---- Erreurs crypto ----
-		"erreur.crypto.base64":        "base64 decode",
-		"erreur.crypto.header":        "format invalide : header Salted__ manquant",
-		"erreur.crypto.ciphertext":    "ciphertext non aligné",
-		"erreur.crypto.donnees.vides": "données vides",
-		"erreur.crypto.padding":       "padding invalide : %d",
 
 		// ---- Erreurs TTS ----
 		"erreur.tts.json":  "erreur json",

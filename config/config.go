@@ -44,10 +44,11 @@ type Config struct {
 	AlsaDevice string // ex: "plughw:3,0"
 	WindowsMic string // ex: "Microphone (Realtek(R) Audio)"
 
-	// GSM
-	GSMPort string // ex: "/dev/ttyUSB0"
-	GSMBaud int
-	GSMPin  string
+	// Modem 4G AT (SIMCom A7670E Cat-1 HAT)
+	GSMPort   string // ex: "/dev/ttyUSB1" (USB) ou "/dev/serial0" (UART du HAT)
+	GSMBaud   int    // vitesse UART (ignorée en USB)
+	GSMPin    string // code PIN SIM, vide si désactivé
+	Whitelist string // numéros autorisés à piloter par SMS
 
 	// piper
 	PiperUrl   string
@@ -56,15 +57,6 @@ type Config struct {
 
 	// notify
 	NotifyDevice string
-
-	// Modem TCL LinkKey IK41
-	ModemURL      string // ex: http://192.168.1.1
-	ModemPassword string // mot de passe interface web
-	ModemVerifKey string // _TclRequestVerificationKey header
-	ModemXorKey   string // clé de chiffrement XOR
-	ModemFreeKey  string // clé AES pour les APIs free (freeApiKey)
-	ModemHmacKey  string // clé HMAC-SHA256
-	Whitelist     string
 
 	// API HTTP
 	APIPort int
@@ -190,10 +182,11 @@ func Load() *Config {
 		AlsaDevice: getEnv("ALSA_DEVICE", "plughw:CARD=Bar,DEV=0"),
 		WindowsMic: getEnv("WINDOWS_MIC", "Microphone (Realtek(R) Audio)"),
 
-		// GSM
-		GSMPort: getEnv("GSM_PORT", "/dev/ttyUSB0"),
-		GSMBaud: 9600,
-		GSMPin:  getEnv("GSM_PIN", "1234"),
+		// Modem 4G AT
+		GSMPort:   getEnv("GSM_PORT", "/dev/ttyUSB1"),
+		GSMBaud:   getEnvInt("GSM_BAUD", 115200),
+		GSMPin:    getEnv("GSM_PIN", ""),
+		Whitelist: getEnv("WHITELIST", ""),
 
 		// Piper
 		PiperBin:   getEnv("PIPER_BIN", ""),
@@ -202,15 +195,6 @@ func Load() *Config {
 
 		// Notify
 		NotifyDevice: getEnv("NOTIFY_DEVICE", ""),
-
-		// Model
-		ModemURL:      getEnv("MODEM_URL", "http://192.168.1.1"),
-		ModemPassword: getEnv("MODEM_PASSWORD", ""),
-		ModemVerifKey: getEnv("MODEM_VERIF_KEY", ""),
-		ModemXorKey:   getEnv("MODEM_XOR_KEY", ""),
-		ModemFreeKey:  getEnv("MODEM_FREE_KEY", ""),
-		ModemHmacKey:  getEnv("MODEM_HMAC_KEY", ""),
-		Whitelist:     getEnv("WHITELIST", ""),
 
 		// HTTP Client
 		APIPort: getEnvInt("API_PORT", 8080),

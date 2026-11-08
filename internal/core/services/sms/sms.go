@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"ha-command-gateway/internal/core"
 	"ha-command-gateway/internal/core/adapters/modem"
@@ -12,56 +14,56 @@ import (
 	"ha-command-gateway/internal/nlp"
 )
 
-// Config regroupe les paramètres de connexion au modem TCL.
-type Config struct {
-	ModemURL  string
-	Password  string
-	VerifKey  string
-	XorKey    string
-	FreeKey   string
-	HmacKey   string
-	Whitelist string
-}
-
 // Service écoute les SMS entrants et permet d'en envoyer.
 type Service struct {
-	cfg       Config
+	cfg       modem.Config
 	analyseur *nlp.Analyseur
 	bus       *core.Bus
 
-	client *modem.Client
+	client atomic.Pointer[modem.Client]
 }
 
+// delaiReessai : intervalle entre deux tentatives quand le modem est absent au démarrage.
+const delaiReessai = 30 * time.Second
+
 // New crée le service SMS. La connexion au modem a lieu dans Init.
-func New(cfg Config, analyseur *nlp.Analyseur, bus *core.Bus) *Service {
+func New(cfg modem.Config, analyseur *nlp.Analyseur, bus *core.Bus) *Service {
 	return &Service{cfg: cfg, analyseur: analyseur, bus: bus}
 }
 
 func (s *Service) Nom() string { return "sms" }
 
-// Init connecte le modem
+// Init connecte le modem. Un échec n'est pas bloquant : Démarrer réessaiera.
 func (s *Service) Init(ctx context.Context) error {
-	client, err := modem.New(
-		s.cfg.ModemURL, s.cfg.Password, s.cfg.VerifKey,
-		s.cfg.XorKey, s.cfg.FreeKey, s.cfg.HmacKey, s.cfg.Whitelist,
-	)
+	client, err := modem.New(s.cfg)
 	if err != nil {
 		logx.WarnT("sms.modem.indispo", err)
 		return nil
 	}
-	s.client = client
+	s.client.Store(client)
 	return nil
 }
 
 // Démarrer écoute les SMS entrants et soumet leur traitement au bus.
+// Si le modem n'était pas prêt (HAT encore en démarrage), il réessaie régulièrement.
 func (s *Service) Démarrer(ctx context.Context) error {
-	if s.client == nil {
-		<-ctx.Done()
-		return ctx.Err()
+	for s.client.Load() == nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delaiReessai):
+		}
+		client, err := modem.New(s.cfg)
+		if err != nil {
+			logx.DebugT("sms.modem.indispo", err)
+			continue
+		}
+		s.client.Store(client)
+		logx.InfoT("modem.reconnecte")
 	}
 
 	smsChan := make(chan modem.SMS, 10)
-	go s.client.EcouterSMS(smsChan)
+	go s.client.Load().EcouterSMS(ctx, smsChan)
 
 	for {
 		select {
@@ -102,10 +104,19 @@ func (s *Service) traiter(numero, message string) {
 	}
 }
 
+// Fermer libère le port série du modem (core.Fermable).
+func (s *Service) Fermer(ctx context.Context) error {
+	if c := s.client.Load(); c != nil {
+		c.Fermer()
+	}
+	return nil
+}
+
 // Envoyer implémente core.SMSSender.
 func (s *Service) Envoyer(numero, message string) error {
-	if s.client == nil {
+	c := s.client.Load()
+	if c == nil {
 		return fmt.Errorf("%s", i18n.T("erreur.modem.indispo"))
 	}
-	return s.client.EnvoyerSMS(numero, message)
+	return c.EnvoyerSMS(numero, message)
 }

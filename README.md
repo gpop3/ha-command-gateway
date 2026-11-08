@@ -3,7 +3,7 @@
 Passerelle entre des **commandes en langage naturel** et **Home Assistant**.  
 L'assistant écoute des ordres venant de trois sources
 - la **voix** (micro + transcription)
-- les **SMS** (modem TCL LinkKey IK41)
+- les **SMS** (modem 4G SIMCom **A7670E Cat-1 HAT**, commandes AT)
 - la **console** — les analyse pour piloter
 
 Home Assistant ou répondre à une question, puis renvoie la réponse via la **synthèse vocale** (Piper) ou par **SMS**.  
@@ -29,8 +29,10 @@ Une petite **API HTTP** permet aussi de déclencher l'envoi d'un SMS depuis l'ex
 - **Voix** : capture micro en continu (ffmpeg), transcription par **Vosk**
   (local temps réel), **Whisper distant** (Raspberry Pi) ou **whisper.cpp**
   (local), réveil par mot-clé « assistant ».
-- **SMS** : réception et envoi via un modem **TCL LinkKey IK41** (API web
-  chiffrée du modem).
+- **SMS** : réception et envoi via un modem **SIMCom A7670E Cat-1 HAT**
+  (commandes AT sur port série, mode PDU) : accents et emoji (UCS2), SMS longs
+  découpés/réassemblés automatiquement, code PIN, reconnexion automatique si le
+  modem ne répond plus, garde-fou anti-écho.
 - **Console** : saisie clavier pour tester sans micro ni modem.
 - **NLP** : analyse de la commande, mise en correspondance avec les entités
   Home Assistant et exécution de l'action (ou récupération d'un état).
@@ -103,7 +105,7 @@ internal/core/services/         ── LES SERVICES (source + traitement)
 └── api/                        Serveur HTTP (route /sms/send)
 
 internal/core/adapters/         ── LES DRIVERS TECHNIQUES
-├── modem/                      Modem TCL IK41 (chiffrement web + envoi/réception)
+├── modem/                      Modem AT A7670E (port série + PDU : envoi/réception)
 ├── tts/                        Synthèse vocale Piper + lecture audio (aplay)
 └── stt/                        Transcription : Vosk / Whisper distant / whisper.cpp
 
@@ -211,7 +213,8 @@ aucune dépendance circulaire avec `nlp`.
 - **Vosk** : la bibliothèque C `libvosk` + un modèle de langue (mode `vosk`,
   Linux uniquement, nécessite **cgo**). Inutile en mode `remote`/`local`.
 - Un **token Home Assistant** (long-lived access token).
-- (Optionnel) un modem **TCL LinkKey IK41** pour le SMS.
+- (Optionnel) un modem **SIMCom A7670E Cat-1 HAT** (ou tout module AT 3GPP
+  compatible SIM7600) avec une carte SIM pour le SMS.
 
 ---
 
@@ -231,7 +234,7 @@ docker build -t assistant-domotique .
 docker run --rm -it \
   --env-file .env \
   --device /dev/snd \              # audio
-  --device /dev/ttyUSB0 \          # modem (si SMS)
+  --device /dev/ttyUSB1 \          # port AT du modem (si SMS)
   -v /chemin/vers/vosk-model:/opt/vosk-model \
   -p 8080:8080 \
   assistant-domotique
@@ -316,19 +319,24 @@ est chargé automatiquement au démarrage). Voir aussi `.env.example`.
 | `PIPER_SERVER_VOICE` | `fr_FR/siwis/medium` | Path de l'API. *(entrypoint Docker)* |
 | `PIPER_SERVER_MODEL_NAME` | `fr_FR-siwis-medium` | Modèle de voix `.onnx`. *(entrypoint Docker)* |
 
-### Modem / SMS (TCL LinkKey IK41)
+### Modem / SMS (SIMCom A7670E Cat-1 HAT)
 
 | Variable | Défaut | Description |
 |----------|--------|-------------|
-| `MODEM_URL` | `http://192.168.1.1` | URL de l'interface web du modem. |
-| `MODEM_PASSWORD` | *(vide)* | Mot de passe de l'interface. |
-| `MODEM_VERIF_KEY` | *(vide)* | Header `_TclRequestVerificationKey`. |
-| `MODEM_XOR_KEY` | *(vide)* | Clé de chiffrement XOR. |
-| `MODEM_FREE_KEY` | *(vide)* | Clé AES des APIs « free ». |
-| `MODEM_HMAC_KEY` | *(vide)* | Clé HMAC-SHA256. |
-| `WHITELIST` | *(vide)* | Numéros autorisés à piloter par SMS. |
-| `GSM_PORT` | `/dev/ttyUSB0` | Port série GSM (legacy). |
-| `GSM_PIN` | `1234` | Code PIN SIM (legacy). |
+| `GSM_PORT` | `/dev/ttyUSB1` | Port AT du modem : `/dev/ttyUSB1` en USB, `/dev/serial0` via l'UART du GPIO (activer le port série dans `raspi-config`). |
+| `GSM_BAUD` | `115200` | Vitesse de l'UART (ignorée en USB). |
+| `GSM_PIN` | *(vide)* | Code PIN de la SIM. Vide si le PIN est désactivé. Un PIN refusé n'est **jamais** retenté (pour ne pas bloquer la SIM). |
+| `WHITELIST` | *(vide)* | Numéros autorisés à piloter par SMS, séparés par des virgules (`06…` et `+336…` sont équivalents). |
+
+Fonctionnement : le modem est piloté en commandes AT, en mode **PDU**. Les SMS
+reçus sont lus à chaque notification `+CMTI` et toutes les 10 s, puis supprimés
+de la SIM. Seuls les numéros de la whitelist sont exécutés, et un SMS vieux de
+plus de 5 minutes est ignoré (pas de rejeu au redémarrage). Si le modem ne
+répond plus, le port est rouvert et le modem réinitialisé au cycle suivant ; si
+le HAT n'est pas prêt au lancement, l'assistant réessaie toutes les 30 s.
+
+> Les numéros `/dev/ttyUSB*` peuvent changer d'un démarrage à l'autre : préférer
+> le chemin stable `/dev/serial/by-id/...` correspondant au port AT.
 
 ### API HTTP
 

@@ -53,7 +53,7 @@ RUN mkdir -p /opt/vosk-model && \
 WORKDIR /app
 
 ENV ALSA_DEVICE=plughw:CARD=Bar,DEV=0
-ENV GSM_PORT=/dev/ttyUSB0
+ENV GSM_PORT=/dev/ttyUSB1
 
 ENV VOSK_MODEL_PATH=/opt/vosk-model
 ENV VOSK_MODEL_NAME=vosk-model-small-fr-0.22
